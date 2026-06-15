@@ -4,10 +4,9 @@ use pyo3::{pyfunction, pymethods, pymodule, wrap_pyfunction, Bound, PyResult};
 use std::collections::HashSet;
 
 use poke_engine::choices::{Choices, MoveCategory, MOVES};
+use poke_engine::decision::{self, SideChoice};
 use poke_engine::engine::abilities::Abilities;
-use poke_engine::engine::generate_instructions::{
-    calculate_both_damage_rolls, generate_instructions_from_move_pair,
-};
+use poke_engine::engine::generate_instructions::calculate_both_damage_rolls;
 use poke_engine::engine::items::Items;
 use poke_engine::engine::state::{MoveChoice, PokemonVolatileStatus, Terrain, Weather};
 use poke_engine::instruction::{Instruction, StateInstructions};
@@ -16,19 +15,57 @@ use poke_engine::mcts_threaded::perform_mcts_shared_tree;
 use poke_engine::pokemon::PokemonName;
 use poke_engine::search::iterative_deepen_expectiminimax;
 use poke_engine::state::{
-    LastUsedMove, Move, Pokemon, PokemonIndex, PokemonMoves, PokemonNature, PokemonStatus,
-    PokemonType, Side, SideConditions, SidePokemon, State, StateTerrain, StateTrickRoom,
-    StateWeather, VolatileStatusDurations,
+    DamageDealt, LastUsedMove, Move, Pokemon, PokemonIndex, PokemonMoves, PokemonNature,
+    PokemonStatus, PokemonType, Side, SideConditions, SidePokemon, SideReference, State,
+    StateTerrain, StateTrickRoom, StateWeather, VolatileStatusDurations, ACTIVE_PER_SIDE,
 };
 use std::str::FromStr;
 use std::time::Duration;
 
+/// Human-readable rendering of a single per-slot move choice, prefixing switches
+/// with `switch ` (matching the singles CLI/Python convention).
 fn movechoice_to_string(side: &Side, move_choice: &MoveChoice) -> String {
     match move_choice {
         MoveChoice::Switch(_) => {
             format!("switch {}", move_choice.to_string(side))
         }
         _ => move_choice.to_string(side),
+    }
+}
+
+/// Render a side's turn decision. In singles this is one move; in doubles the
+/// per-slot sub-actions are joined with `;` (e.g. `"watergun;switch bulbasaur"`).
+#[cfg(not(feature = "doubles"))]
+fn side_choice_to_string(side: &Side, choice: &SideChoice) -> String {
+    movechoice_to_string(side, choice)
+}
+#[cfg(feature = "doubles")]
+fn side_choice_to_string(side: &Side, choice: &SideChoice) -> String {
+    choice
+        .actions
+        .iter()
+        .map(|a| movechoice_to_string(side, a))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// MoveCategory <-> lowercase string (DamageDealt carries one; it has no Display).
+fn move_category_to_string(category: &MoveCategory) -> String {
+    match category {
+        MoveCategory::Physical => "physical",
+        MoveCategory::Special => "special",
+        MoveCategory::Status => "status",
+        MoveCategory::Switch => "switch",
+    }
+    .to_string()
+}
+fn move_category_from_string(s: &str) -> MoveCategory {
+    match s.to_lowercase().as_str() {
+        "physical" => MoveCategory::Physical,
+        "special" => MoveCategory::Special,
+        "status" => MoveCategory::Status,
+        "switch" => MoveCategory::Switch,
+        _ => MoveCategory::Physical,
     }
 }
 
@@ -82,6 +119,12 @@ impl Into<State> for PyState {
             team_preview: self.team_preview,
             use_last_used_move: false,
             use_damage_dealt: false,
+            // Transient per-turn resolution context (doubles only); reset by the
+            // resolver each move, so any default is fine here.
+            #[cfg(feature = "doubles")]
+            acting_slot: 0,
+            #[cfg(feature = "doubles")]
+            target_position: poke_engine::state::BattlePosition::new(SideReference::SideTwo, 0),
         };
         state.set_conditional_mechanics();
         state
@@ -154,59 +197,43 @@ pub struct PySide {
     pokemon: [PyPokemon; 6],
     side_conditions: PySideConditions,
 
-    active_index: String,
+    // One active index per slot: length 1 in singles, length 2 in a doubles
+    // build. The per-active battle state (boosts, volatile statuses, substitute,
+    // last_used_move, ...) lives on each `Pokemon` (see PyPokemon), matching the
+    // Rust engine, so it is NOT duplicated here.
+    active_indices: Vec<String>,
     baton_passing: bool,
     shed_tailing: bool,
-    volatile_status_durations: PyVolatileStatusDurations,
     wish: (i8, i16),
     future_sight: (i8, String),
     force_switch: bool,
+    // Per-slot forced switches (doubles only). Empty/ignored in a singles build;
+    // length 2 in doubles. Kept on the side so a doubles state round-trips.
+    force_switch_slots: Vec<bool>,
     force_trapped: bool,
     slow_uturn_move: bool,
-    volatile_statuses: HashSet<String>,
-    substitute_health: i16,
-    attack_boost: i8,
-    defense_boost: i8,
-    special_attack_boost: i8,
-    special_defense_boost: i8,
-    speed_boost: i8,
-    accuracy_boost: i8,
-    evasion_boost: i8,
-    last_used_move: String,
     switch_out_move_second_saved_move: String,
 }
 
 impl From<Side> for PySide {
     fn from(other: Side) -> Self {
-        let pokemon = other.pokemon.pkmn.map(|pokemon| pokemon.into());
+        let pokemon = other.pokemon.pkmn.clone().map(|pokemon| pokemon.into());
+        #[cfg(feature = "doubles")]
+        let force_switch_slots = other.force_switch_slots.to_vec();
+        #[cfg(not(feature = "doubles"))]
+        let force_switch_slots = Vec::<bool>::new();
         PySide {
             pokemon,
-            side_conditions: PySideConditions::from(other.side_conditions),
-            active_index: other.active_index.serialize(),
+            side_conditions: PySideConditions::from(other.side_conditions.clone()),
+            active_indices: other.active_indices.iter().map(|i| i.serialize()).collect(),
             baton_passing: other.baton_passing,
             shed_tailing: other.shed_tailing,
-            volatile_status_durations: PyVolatileStatusDurations::from(
-                other.volatile_status_durations,
-            ),
             wish: other.wish,
             future_sight: (other.future_sight.0, other.future_sight.1.serialize()),
             force_switch: other.force_switch,
+            force_switch_slots,
             force_trapped: other.force_trapped,
             slow_uturn_move: other.slow_uturn_move,
-            volatile_statuses: other
-                .volatile_statuses
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            substitute_health: other.substitute_health,
-            attack_boost: other.attack_boost,
-            defense_boost: other.defense_boost,
-            special_attack_boost: other.special_attack_boost,
-            special_defense_boost: other.special_defense_boost,
-            speed_boost: other.speed_boost,
-            accuracy_boost: other.accuracy_boost,
-            evasion_boost: other.evasion_boost,
-            last_used_move: other.last_used_move.serialize(),
             switch_out_move_second_saved_move: other.switch_out_move_second_saved_move.to_string(),
         }
     }
@@ -214,8 +241,19 @@ impl From<Side> for PySide {
 
 impl Into<Side> for PySide {
     fn into(self) -> Side {
+        // Fill the fixed-size active-index array from the provided list, padding
+        // missing slots with index 0 (mirrors the singles degenerate default).
+        let mut active_indices = [PokemonIndex::P0; ACTIVE_PER_SIDE];
+        for (slot, idx) in active_indices.iter_mut().enumerate() {
+            *idx = PokemonIndex::deserialize(
+                self.active_indices
+                    .get(slot)
+                    .map(|s| s.as_str())
+                    .unwrap_or("0"),
+            );
+        }
         Side {
-            active_index: PokemonIndex::deserialize(&self.active_index),
+            active_indices,
             baton_passing: self.baton_passing,
             shed_tailing: self.shed_tailing,
             pokemon: SidePokemon {
@@ -229,38 +267,29 @@ impl Into<Side> for PySide {
                 ],
             },
             side_conditions: self.side_conditions.into(),
-            volatile_status_durations: VolatileStatusDurations::from(
-                self.volatile_status_durations.into(),
-            ),
             wish: self.wish,
             future_sight: (
                 self.future_sight.0,
                 PokemonIndex::deserialize(&self.future_sight.1),
             ),
             force_switch: self.force_switch,
+            #[cfg(feature = "doubles")]
+            force_switch_slots: {
+                let mut fss = [false; ACTIVE_PER_SIDE];
+                for (slot, flag) in fss.iter_mut().enumerate() {
+                    *flag = self.force_switch_slots.get(slot).copied().unwrap_or(false);
+                }
+                fss
+            },
             force_trapped: self.force_trapped,
             slow_uturn_move: self.slow_uturn_move,
-            volatile_statuses: self
-                .volatile_statuses
-                .iter()
-                .map(|s| PokemonVolatileStatus::from_str(s))
-                .collect::<Result<HashSet<_>, _>>()
-                .unwrap(),
-            substitute_health: self.substitute_health,
-            attack_boost: self.attack_boost,
-            defense_boost: self.defense_boost,
-            special_attack_boost: self.special_attack_boost,
-            special_defense_boost: self.special_defense_boost,
-            speed_boost: self.speed_boost,
-            accuracy_boost: self.accuracy_boost,
-            evasion_boost: self.evasion_boost,
-            last_used_move: LastUsedMove::deserialize(&self.last_used_move),
-            damage_dealt: Default::default(),
             switch_out_move_second_saved_move: Choices::from_str(
                 &self.switch_out_move_second_saved_move,
             )
             .unwrap(),
         }
+        // Per-active state is carried by each Pokemon (Into<Pokemon>); nothing to
+        // write at the Side level.
     }
 }
 
@@ -270,50 +299,29 @@ impl PySide {
     #[pyo3(signature = (
         pokemon=Vec::<PyPokemon>::new(),
         side_conditions=PySideConditions::from(SideConditions::default()),
-        active_index="0".to_string(),
+        active_indices=vec!["0".to_string()],
         baton_passing=false,
         shed_tailing=false,
-        volatile_status_durations=PyVolatileStatusDurations::new(0, 0, 0, 0, 0, 0),
         wish=(0, 0),
         future_sight=(0, "0".to_string()),
         force_switch=false,
+        force_switch_slots=Vec::<bool>::new(),
         force_trapped=false,
         slow_uturn_move=false,
-        volatile_statuses=HashSet::<String>::new(),
-        substitute_health=0,
-        attack_boost=0,
-        defense_boost=0,
-        special_attack_boost=0,
-        special_defense_boost=0,
-        speed_boost=0,
-        accuracy_boost=0,
-        evasion_boost=0,
-        last_used_move="move:none".to_string(),
         switch_out_move_second_saved_move="none".to_string(),
     ))]
     fn new(
         mut pokemon: Vec<PyPokemon>,
         side_conditions: PySideConditions,
-
-        active_index: String,
+        active_indices: Vec<String>,
         baton_passing: bool,
         shed_tailing: bool,
-        volatile_status_durations: PyVolatileStatusDurations,
         wish: (i8, i16),
         future_sight: (i8, String),
         force_switch: bool,
+        force_switch_slots: Vec<bool>,
         force_trapped: bool,
         slow_uturn_move: bool,
-        volatile_statuses: HashSet<String>,
-        substitute_health: i16,
-        attack_boost: i8,
-        defense_boost: i8,
-        special_attack_boost: i8,
-        special_defense_boost: i8,
-        speed_boost: i8,
-        accuracy_boost: i8,
-        evasion_boost: i8,
-        last_used_move: String,
         switch_out_move_second_saved_move: String,
     ) -> Self {
         while pokemon.len() < 6 {
@@ -329,25 +337,15 @@ impl PySide {
                 pokemon[5].clone(),
             ],
             side_conditions,
-            active_index,
+            active_indices,
             baton_passing,
             shed_tailing,
-            volatile_status_durations,
             wish,
             future_sight,
             force_switch,
+            force_switch_slots,
             force_trapped,
             slow_uturn_move,
-            volatile_statuses,
-            substitute_health,
-            attack_boost,
-            defense_boost,
-            special_attack_boost,
-            special_defense_boost,
-            speed_boost,
-            accuracy_boost,
-            evasion_boost,
-            last_used_move,
             switch_out_move_second_saved_move,
         }
     }
@@ -591,6 +589,21 @@ pub struct PyPokemon {
     pub terastallized: bool,
     pub tera_type: String,
     pub moves: Vec<PyMove>,
+
+    // Per-active battle state. In singles only the active Pokemon's copy is ever
+    // read; in doubles each of the two actives carries its own.
+    pub volatile_statuses: HashSet<String>,
+    pub volatile_status_durations: PyVolatileStatusDurations,
+    pub substitute_health: i16,
+    pub attack_boost: i8,
+    pub defense_boost: i8,
+    pub special_attack_boost: i8,
+    pub special_defense_boost: i8,
+    pub speed_boost: i8,
+    pub accuracy_boost: i8,
+    pub evasion_boost: i8,
+    pub last_used_move: String,
+    pub damage_dealt: PyDamageDealt,
 }
 
 impl From<Pokemon> for PyPokemon {
@@ -633,6 +646,24 @@ impl From<Pokemon> for PyPokemon {
                 .into_iter()
                 .map(|m| PyMove::from(m.clone()))
                 .collect(),
+            volatile_statuses: other
+                .volatile_statuses
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            volatile_status_durations: PyVolatileStatusDurations::from(
+                other.volatile_status_durations.clone(),
+            ),
+            substitute_health: other.substitute_health,
+            attack_boost: other.attack_boost,
+            defense_boost: other.defense_boost,
+            special_attack_boost: other.special_attack_boost,
+            special_defense_boost: other.special_defense_boost,
+            speed_boost: other.speed_boost,
+            accuracy_boost: other.accuracy_boost,
+            evasion_boost: other.evasion_boost,
+            last_used_move: other.last_used_move.serialize(),
+            damage_dealt: PyDamageDealt::from(other.damage_dealt.clone()),
         }
     }
 }
@@ -680,6 +711,23 @@ impl Into<Pokemon> for PyPokemon {
                 m2: moves_vec[2].clone().into(),
                 m3: moves_vec[3].clone().into(),
             },
+            volatile_statuses: self
+                .volatile_statuses
+                .iter()
+                .map(|s| PokemonVolatileStatus::from_str(s))
+                .collect::<Result<HashSet<_>, _>>()
+                .unwrap(),
+            volatile_status_durations: self.volatile_status_durations.into(),
+            substitute_health: self.substitute_health,
+            attack_boost: self.attack_boost,
+            defense_boost: self.defense_boost,
+            special_attack_boost: self.special_attack_boost,
+            special_defense_boost: self.special_defense_boost,
+            speed_boost: self.speed_boost,
+            accuracy_boost: self.accuracy_boost,
+            evasion_boost: self.evasion_boost,
+            last_used_move: LastUsedMove::deserialize(&self.last_used_move),
+            damage_dealt: self.damage_dealt.into(),
         }
     }
 }
@@ -711,6 +759,18 @@ impl PyPokemon {
         moves=Vec::<PyMove>::new(),
         terastallized=false,
         tera_type="typeless".to_string(),
+        volatile_statuses=HashSet::<String>::new(),
+        volatile_status_durations=PyVolatileStatusDurations::new(0, 0, 0, 0, 0, 0),
+        substitute_health=0,
+        attack_boost=0,
+        defense_boost=0,
+        special_attack_boost=0,
+        special_defense_boost=0,
+        speed_boost=0,
+        accuracy_boost=0,
+        evasion_boost=0,
+        last_used_move="move:none".to_string(),
+        damage_dealt=PyDamageDealt::new(0, "physical".to_string(), false),
     ))]
     fn new(
         id: String,
@@ -736,6 +796,18 @@ impl PyPokemon {
         moves: Vec<PyMove>,
         terastallized: bool,
         tera_type: String,
+        volatile_statuses: HashSet<String>,
+        volatile_status_durations: PyVolatileStatusDurations,
+        substitute_health: i16,
+        attack_boost: i8,
+        defense_boost: i8,
+        special_attack_boost: i8,
+        special_defense_boost: i8,
+        speed_boost: i8,
+        accuracy_boost: i8,
+        evasion_boost: i8,
+        last_used_move: String,
+        damage_dealt: PyDamageDealt,
     ) -> Self {
         if base_ability == "" {
             base_ability = ability.clone();
@@ -764,6 +836,18 @@ impl PyPokemon {
             terastallized,
             tera_type,
             moves,
+            volatile_statuses,
+            volatile_status_durations,
+            substitute_health,
+            attack_boost,
+            defense_boost,
+            special_attack_boost,
+            special_defense_boost,
+            speed_boost,
+            accuracy_boost,
+            evasion_boost,
+            last_used_move,
+            damage_dealt,
         }
     }
     #[staticmethod]
@@ -772,6 +856,51 @@ impl PyPokemon {
         let mut py_pkmn = PyPokemon::from(pkmn);
         py_pkmn.hp = 0; // fainted
         py_pkmn
+    }
+}
+
+#[derive(Clone)]
+#[pyclass(name = "DamageDealt", module = "poke_engine", get_all)]
+pub struct PyDamageDealt {
+    pub damage: i16,
+    pub move_category: String,
+    pub hit_substitute: bool,
+}
+
+impl From<DamageDealt> for PyDamageDealt {
+    fn from(other: DamageDealt) -> Self {
+        PyDamageDealt {
+            damage: other.damage,
+            move_category: move_category_to_string(&other.move_category),
+            hit_substitute: other.hit_substitute,
+        }
+    }
+}
+
+impl Into<DamageDealt> for PyDamageDealt {
+    fn into(self) -> DamageDealt {
+        DamageDealt {
+            damage: self.damage,
+            move_category: move_category_from_string(&self.move_category),
+            hit_substitute: self.hit_substitute,
+        }
+    }
+}
+
+#[pymethods]
+impl PyDamageDealt {
+    #[new]
+    #[pyo3(signature = (
+        damage=0,
+        move_category="physical".to_string(),
+        hit_substitute=false,
+    ))]
+    fn new(damage: i16, move_category: String, hit_substitute: bool) -> Self {
+        PyDamageDealt {
+            damage,
+            move_category,
+            hit_substitute,
+        }
     }
 }
 
@@ -841,7 +970,7 @@ struct PyMctsSideResult {
 impl PyMctsSideResult {
     fn from_mcts_side_result(result: MctsSideResult, side: &Side) -> Self {
         PyMctsSideResult {
-            move_choice: movechoice_to_string(side, &result.move_choice),
+            move_choice: side_choice_to_string(side, &result.move_choice),
             total_score: result.total_score,
             visits: result.visits,
         }
@@ -885,19 +1014,19 @@ struct PyIterativeDeepeningResult {
 
 impl PyIterativeDeepeningResult {
     fn from_iterative_deepening_result(
-        result: (Vec<MoveChoice>, Vec<MoveChoice>, Vec<f32>, i8),
+        result: (Vec<SideChoice>, Vec<SideChoice>, Vec<f32>, i8),
         state: &State,
     ) -> Self {
         PyIterativeDeepeningResult {
             s1: result
                 .0
                 .iter()
-                .map(|c| movechoice_to_string(&state.side_one, c))
+                .map(|c| side_choice_to_string(&state.side_one, c))
                 .collect(),
             s2: result
                 .1
                 .iter()
-                .map(|c| movechoice_to_string(&state.side_two, c))
+                .map(|c| side_choice_to_string(&state.side_two, c))
                 .collect(),
             matrix: result.2,
             depth_searched: result.3,
@@ -909,7 +1038,7 @@ impl PyIterativeDeepeningResult {
 fn mcts(py_state: PyState, duration_ms: u64, threads: usize) -> PyResult<PyMctsResult> {
     let mut state: State = py_state.into();
     let duration = Duration::from_millis(duration_ms);
-    let (s1_options, s2_options) = state.root_get_all_options();
+    let (s1_options, s2_options) = decision::root_get_all_options(&state);
     let mcts_result = if threads > 1 {
         perform_mcts_shared_tree(&mut state, s1_options, s2_options, duration, threads)
     } else {
@@ -924,7 +1053,7 @@ fn mcts(py_state: PyState, duration_ms: u64, threads: usize) -> PyResult<PyMctsR
 fn id(py_state: PyState, duration_ms: u64) -> PyResult<PyIterativeDeepeningResult> {
     let mut state: State = py_state.into();
     let duration = Duration::from_millis(duration_ms);
-    let (s1_options, s2_options) = state.root_get_all_options();
+    let (s1_options, s2_options) = decision::root_get_all_options(&state);
     let id_result = iterative_deepen_expectiminimax(&mut state, s1_options, s2_options, duration);
 
     let py_id_result =
@@ -1013,7 +1142,11 @@ fn generate_instructions(
 ) -> PyResult<Vec<PyStateInstructions>> {
     let (s1_move, s2_move);
     let mut state: State = py_state.into();
-    match MoveChoice::from_string(&side_one_move, &state.side_one) {
+    // In singles each argument is a single move (e.g. "watergun" / "switch
+    // bulbasaur"). In a doubles build each is a combined side action: the
+    // per-slot sub-actions joined with `;`, each optionally suffixed with a
+    // `,<slot>` target (e.g. "closecombat,1;protect").
+    match decision::parse_side_choice(&side_one_move, &state.side_one, SideReference::SideOne) {
         Some(m) => s1_move = m,
         None => {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
@@ -1022,7 +1155,7 @@ fn generate_instructions(
             )))
         }
     }
-    match MoveChoice::from_string(&side_two_move, &state.side_two) {
+    match decision::parse_side_choice(&side_two_move, &state.side_two, SideReference::SideTwo) {
         Some(m) => s2_move = m,
         None => {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
@@ -1031,7 +1164,7 @@ fn generate_instructions(
             )))
         }
     }
-    let instructions = generate_instructions_from_move_pair(&mut state, &s1_move, &s2_move, true);
+    let instructions = decision::generate_instructions(&mut state, &s1_move, &s2_move, true);
     let py_instructions = instructions.iter().map(|i| i.clone().into()).collect();
 
     Ok(py_instructions)
@@ -1099,6 +1232,7 @@ fn py_poke_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySideConditions>()?;
     m.add_class::<PyVolatileStatusDurations>()?;
     m.add_class::<PyPokemon>()?;
+    m.add_class::<PyDamageDealt>()?;
     m.add_class::<PyMove>()?;
     m.add_class::<PyStateInstructions>()?;
     m.add_class::<PyInstruction>()?;

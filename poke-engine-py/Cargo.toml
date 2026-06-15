@@ -14,3 +14,5 @@ poke-engine = { path = "../" }
 
 [features]
 default = ["poke-engine/gen4"]
+# Forwards the doubles flag to poke-engine. Combine with a generation feature.
+doubles = ["poke-engine/doubles"]

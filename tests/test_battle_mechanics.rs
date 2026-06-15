@@ -1,4 +1,10 @@
-#![cfg(not(any(feature = "gen1", feature = "gen2", feature = "gen3")))]
+// Singles behavior suite. Instruction streams here are written without the
+// doubles-only per-active `slot` field, so this file builds for genx singles
+// only; doubles behavior is covered by tests/test_doubles.rs.
+#![cfg(all(
+    not(any(feature = "gen1", feature = "gen2", feature = "gen3")),
+    not(feature = "doubles")
+))]
 
 use poke_engine::choices::{Choices, MoveCategory, MOVES};
 use poke_engine::engine::abilities::{Abilities, WEATHER_ABILITY_TURNS};
@@ -9,6 +15,7 @@ use poke_engine::engine::generate_instructions::{
 };
 use poke_engine::engine::items::Items;
 use poke_engine::engine::state::{MoveChoice, PokemonVolatileStatus, Terrain, Weather};
+#[cfg(not(feature = "doubles"))] // only used by singles-gated force_switch tests
 use poke_engine::instruction::Instruction::ToggleSideOneForceSwitch;
 use poke_engine::instruction::{
     ApplyVolatileStatusInstruction, BoostInstruction, ChangeAbilityInstruction,
@@ -20,14 +27,16 @@ use poke_engine::instruction::{
     DecrementRestTurnsInstruction, DecrementWishInstruction, DisableMoveInstruction,
     EnableMoveInstruction, FormeChangeInstruction, HealInstruction, Instruction,
     RemoveVolatileStatusInstruction, SetFutureSightInstruction, SetLastUsedMoveInstruction,
-    SetSecondMoveSwitchOutMoveInstruction, SetSleepTurnsInstruction, StateInstructions,
-    SwitchInstruction, ToggleBatonPassingInstruction, ToggleShedTailingInstruction,
-    ToggleTrickRoomInstruction,
+    SetSleepTurnsInstruction, StateInstructions, SwitchInstruction, ToggleBatonPassingInstruction,
+    ToggleShedTailingInstruction, ToggleTrickRoomInstruction,
 };
+#[cfg(not(feature = "doubles"))] // only used by singles-gated force_switch tests
+use poke_engine::instruction::SetSecondMoveSwitchOutMoveInstruction;
 use poke_engine::pokemon::PokemonName;
 use poke_engine::state::{
-    pokemon_index_iter, LastUsedMove, Move, PokemonBoostableStat, PokemonIndex, PokemonMoveIndex,
-    PokemonSideCondition, PokemonStatus, PokemonType, SideReference, State, StateWeather,
+    pokemon_index_iter, BattlePosition, LastUsedMove, Move, PokemonBoostableStat, PokemonIndex,
+    PokemonMoveIndex, PokemonSideCondition, PokemonStatus, PokemonType, SideReference, State,
+    StateWeather,
 };
 
 #[cfg(feature = "terastallization")]
@@ -62,8 +71,8 @@ fn set_moves_on_pkmn_and_call_generate_instructions(
 
     let instructions = generate_instructions_with_state_assertion(
         state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
     instructions
 }
@@ -73,9 +82,9 @@ fn test_confuseray_into_substitute() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_two.substitute_health = 20;
+    state.side_two.get_active().substitute_health = 20;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -108,8 +117,8 @@ fn test_branch_on_crit() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         true,
     );
 
@@ -151,8 +160,8 @@ fn test_highcrit_move() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         true,
     );
 
@@ -199,8 +208,8 @@ fn test_wickedblow_always_crits_without_a_branch() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         true,
     );
 
@@ -212,7 +221,7 @@ fn test_wickedblow_always_ignores_defensive_boost_on_opponent_because_of_crit() 
     let mut state = State::default();
     state.side_two.get_active().hp = 500;
     state.side_two.get_active().maxhp = 500;
-    state.side_two.defense_boost = 1;
+    state.side_two.get_active().defense_boost = 1;
 
     let move_one = Choices::WICKEDBLOW;
     let move_two = Choices::SPLASH;
@@ -227,8 +236,8 @@ fn test_wickedblow_always_ignores_defensive_boost_on_opponent_because_of_crit() 
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         true,
     );
 
@@ -255,8 +264,8 @@ fn test_wickedblow_cannot_crit_on_shellarmor() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         true,
     );
 
@@ -282,8 +291,8 @@ fn test_surgingstrikes_always_crits_without_a_branch() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         true,
     );
 
@@ -308,8 +317,8 @@ fn test_crit_does_not_overkill() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         true,
     );
 
@@ -495,8 +504,8 @@ fn test_branch_when_a_roll_can_kill() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         true,
     );
 
@@ -541,8 +550,8 @@ fn test_branch_when_a_roll_can_kill_on_the_low_side() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         true,
     );
 
@@ -585,8 +594,8 @@ fn test_min_damage_killing_does_not_branch() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         true,
     );
 
@@ -1009,7 +1018,7 @@ fn test_bellydrum_at_75_percent() {
 #[test]
 fn test_bellydrum_with_negative_prior_boost() {
     let mut state = State::default();
-    state.side_one.attack_boost = -1;
+    state.side_one.get_active().attack_boost = -1;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -1370,9 +1379,9 @@ fn test_knockoff_boosts_damage_but_cannot_remove_if_sub_is_hit() {
     state.side_one.get_active().item = Items::LEFTOVERS;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_one.substitute_health = 100;
+    state.side_one.get_active().substitute_health = 100;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -1706,7 +1715,7 @@ fn test_gen9_battlebond_boost() {
 fn test_battlebond_gen9_does_not_overboost() {
     let mut state = State::default();
     state.side_two.get_active().hp = 1;
-    state.side_one.attack_boost = 6;
+    state.side_one.get_active().attack_boost = 6;
     state.side_one.get_active().ability = Abilities::BATTLEBOND;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -1799,7 +1808,7 @@ fn test_grimneigh_boost() {
 fn test_chillingneigh_does_not_overboost() {
     let mut state = State::default();
     state.side_two.get_active().hp = 1;
-    state.side_one.attack_boost = 6;
+    state.side_one.get_active().attack_boost = 6;
     state.side_one.get_active().ability = Abilities::CHILLINGNEIGH;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -1822,7 +1831,7 @@ fn test_chillingneigh_does_not_overboost() {
 fn test_grimneigh_does_not_overboost() {
     let mut state = State::default();
     state.side_two.get_active().hp = 1;
-    state.side_one.special_attack_boost = 6;
+    state.side_one.get_active().special_attack_boost = 6;
     state.side_one.get_active().ability = Abilities::GRIMNEIGH;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -1896,7 +1905,7 @@ fn test_berserk_when_staying_above_half() {
 fn test_berserk_cannot_overboost() {
     let mut state = State::default();
     state.side_one.get_active().hp = 51;
-    state.side_one.special_attack_boost = 6;
+    state.side_one.get_active().special_attack_boost = 6;
     state.side_one.get_active().ability = Abilities::BERSERK;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -2163,7 +2172,7 @@ fn test_cottondown_activates_when_fainting() {
 fn test_cottondown_cannot_boost_below_minus_6() {
     let mut state = State::default();
     state.side_one.get_active().ability = Abilities::COTTONDOWN;
-    state.side_two.speed_boost = -6;
+    state.side_two.get_active().speed_boost = -6;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -2827,9 +2836,9 @@ fn test_outrage_fatigue_causing_confusion() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::LOCKEDMOVE);
-    state.side_one.volatile_status_durations.lockedmove = 2;
+    state.side_one.get_active().volatile_status_durations.lockedmove = 2;
     state.side_one.get_active().moves.m1.disabled = true;
     state.side_one.get_active().moves.m2.disabled = true;
     state.side_one.get_active().moves.m3.disabled = true;
@@ -2908,10 +2917,10 @@ fn test_multiattack_typechange_with_silvally_drive() {
 #[test]
 fn test_haze_resets_both_side_boosts() {
     let mut state = State::default();
-    state.side_one.attack_boost = 3;
-    state.side_one.defense_boost = -3;
-    state.side_two.special_attack_boost = 2;
-    state.side_two.special_defense_boost = -2;
+    state.side_one.get_active().attack_boost = 3;
+    state.side_one.get_active().defense_boost = -3;
+    state.side_two.get_active().special_attack_boost = 2;
+    state.side_two.get_active().special_defense_boost = -2;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -2950,10 +2959,10 @@ fn test_haze_resets_both_side_boosts() {
 #[test]
 fn test_clearsmog_removes_boosts_on_target() {
     let mut state = State::default();
-    state.side_one.attack_boost = 3;
-    state.side_one.defense_boost = -3;
-    state.side_two.special_attack_boost = -2;
-    state.side_two.special_defense_boost = 2;
+    state.side_one.get_active().attack_boost = 3;
+    state.side_one.get_active().defense_boost = -3;
+    state.side_two.get_active().special_attack_boost = -2;
+    state.side_two.get_active().special_defense_boost = 2;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -2987,10 +2996,10 @@ fn test_clearsmog_removes_boosts_on_target() {
 fn test_clearsmog_does_not_reset_boosts_if_defender_is_immune() {
     let mut state = State::default();
     state.side_two.get_active().types.0 = PokemonType::STEEL;
-    state.side_one.attack_boost = 3;
-    state.side_one.defense_boost = -3;
-    state.side_two.special_attack_boost = -2;
-    state.side_two.special_defense_boost = 2;
+    state.side_one.get_active().attack_boost = 3;
+    state.side_one.get_active().defense_boost = -3;
+    state.side_two.get_active().special_attack_boost = -2;
+    state.side_two.get_active().special_defense_boost = 2;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -3236,7 +3245,7 @@ fn test_earlier_gen_nothing_happens_if_destinybond_is_used_while_already_having_
     state.side_one.get_active().speed = 150;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::DESTINYBOND);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -3259,7 +3268,7 @@ fn test_later_gen_destinybond_cannot_be_used_twice_in_a_row() {
     state.side_one.get_active().speed = 150;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::DESTINYBOND);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -3286,7 +3295,7 @@ fn test_destinybond_is_removed_if_non_destinybond_is_used() {
     state.side_one.get_active().speed = 150;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::DESTINYBOND);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -3383,7 +3392,7 @@ fn test_using_substitute_when_it_is_already_up() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -4009,9 +4018,9 @@ fn test_taking_damage_with_0_hp_sub_but_with_vs() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_one.substitute_health = 0;
+    state.side_one.get_active().substitute_health = 0;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -4342,9 +4351,9 @@ fn test_using_protect_with_a_substitute() {
     state.side_one.get_active().speed = 150;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_one.substitute_health = 25;
+    state.side_one.get_active().substitute_health = 25;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -4374,14 +4383,15 @@ fn test_using_protect_with_a_substitute() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_drag_move_against_substitute() {
     let mut state = State::default();
     state.side_one.get_active().speed = 150;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_one.substitute_health = 25;
+    state.side_one.get_active().substitute_health = 25;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -4577,14 +4587,15 @@ fn test_tanglinghair() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_whirlwind_move_against_substitute() {
     let mut state = State::default();
     state.side_one.get_active().speed = 150;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_one.substitute_health = 25;
+    state.side_one.get_active().substitute_health = 25;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -4692,9 +4703,9 @@ fn test_drag_move_against_protect_and_substitute() {
     state.side_one.get_active().speed = 150;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_one.substitute_health = 25;
+    state.side_one.get_active().substitute_health = 25;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -5162,8 +5173,8 @@ fn test_salac_berry_activating_with_6_speed_and_contrary() {
     state.side_one.get_active().item = Items::SALACBERRY;
     state.side_one.get_active().ability = Abilities::CONTRARY;
     state.side_one.get_active().hp = 50;
-    state.side_one.speed_boost = 6;
-    state.side_two.speed_boost = 6;
+    state.side_one.get_active().speed_boost = 6;
+    state.side_two.get_active().speed_boost = 6;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -5772,7 +5783,7 @@ fn test_locked_moves_unlock_on_switchout() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -6127,9 +6138,10 @@ fn test_growth_in_sun() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_batonpass_with_boosts() {
     let mut state = State::default();
-    state.side_one.attack_boost = 1;
+    state.side_one.get_active().attack_boost = 1;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -6157,7 +6169,7 @@ fn test_batonpass_with_boosts() {
 #[cfg(feature = "gen4")]
 fn test_simple_in_gen4_doubles_effective_boost() {
     let mut state = State::default();
-    state.side_one.attack_boost = 1; // should behave as +2 in gen4
+    state.side_one.get_active().attack_boost = 1; // should behave as +2 in gen4
 
     let regular_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -6197,10 +6209,10 @@ fn test_simple_in_gen4_doubles_effective_boost() {
 #[test]
 fn test_switching_out_with_lockedmove_turns_resets() {
     let mut state = State::default();
-    state.side_one.volatile_status_durations.lockedmove = 1;
+    state.side_one.get_active().volatile_status_durations.lockedmove = 1;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::LOCKEDMOVE);
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
@@ -6234,8 +6246,8 @@ fn test_switching_out_with_lockedmove_turns_resets() {
 #[test]
 fn test_switching_from_batonpass_with_boosts() {
     let mut state = State::default();
-    state.side_one.attack_boost = 5;
-    state.side_one.speed_boost = 5;
+    state.side_one.get_active().attack_boost = 5;
+    state.side_one.get_active().speed_boost = 5;
     state.side_one.force_switch = true;
     state.side_one.baton_passing = true;
 
@@ -6263,11 +6275,12 @@ fn test_switching_from_batonpass_with_boosts() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_batonpass_with_leechseed() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::LEECHSEED);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -6297,7 +6310,7 @@ fn test_switching_from_batonpass_with_leechseed() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::LEECHSEED);
     state.side_one.force_switch = true;
     state.side_one.baton_passing = true;
@@ -6335,7 +6348,7 @@ fn test_non_baton_pass_switching_with_leechseed() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::LEECHSEED);
     state.side_one.force_switch = true;
     state.side_one.baton_passing = false;
@@ -6369,9 +6382,9 @@ fn test_switching_from_batonpass_with_sub() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_one.substitute_health = 25;
+    state.side_one.get_active().substitute_health = 25;
     state.side_one.force_switch = true;
     state.side_one.baton_passing = true;
 
@@ -6404,7 +6417,7 @@ fn test_non_baton_pass_switching_with_sub() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::LEECHSEED);
     state.side_one.force_switch = true;
     state.side_one.baton_passing = false;
@@ -6434,6 +6447,7 @@ fn test_non_baton_pass_switching_with_sub() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_basic_shedtail_usage() {
     let mut state = State::default();
     state.side_one.get_active().speed = 150;
@@ -6473,9 +6487,10 @@ fn test_basic_shedtail_usage() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_shedtail_with_boosts() {
     let mut state = State::default();
-    state.side_one.attack_boost = 1;
+    state.side_one.get_active().attack_boost = 1;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -6512,11 +6527,12 @@ fn test_shedtail_with_boosts() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_shedtail_with_leechseed() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::LEECHSEED);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -6558,9 +6574,9 @@ fn test_switching_from_shedtail() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_one.substitute_health = 25;
+    state.side_one.get_active().substitute_health = 25;
     state.side_one.force_switch = true;
     state.side_one.shed_tailing = true;
 
@@ -6591,8 +6607,8 @@ fn test_switching_from_shedtail() {
 #[test]
 fn test_switching_from_shedtail_with_boosts() {
     let mut state = State::default();
-    state.side_one.attack_boost = 5;
-    state.side_one.speed_boost = 5;
+    state.side_one.get_active().attack_boost = 5;
+    state.side_one.get_active().speed_boost = 5;
     state.side_one.force_switch = true;
     state.side_one.shed_tailing = true;
 
@@ -6634,7 +6650,7 @@ fn test_switching_from_shedtail_with_leechseed() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::LEECHSEED);
     state.side_one.force_switch = true;
     state.side_one.shed_tailing = true;
@@ -6671,7 +6687,7 @@ fn test_protosynthesisatk_boosts_attack() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::PROTOSYNTHESISATK);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -6726,7 +6742,7 @@ fn test_protosynthesis_clears_when_sun_ends() {
     state.side_one.get_active().ability = Abilities::PROTOSYNTHESIS;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::PROTOSYNTHESISATK);
     state.weather.weather_type = Weather::SUN;
     state.weather.turns_remaining = 1;
@@ -6763,7 +6779,7 @@ fn test_protosynthesis_stays_up_but_consumes_item_when_sun_ends() {
     state.side_one.get_active().item = Items::BOOSTERENERGY;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::PROTOSYNTHESISATK);
     state.weather.weather_type = Weather::SUN;
     state.weather.turns_remaining = 1;
@@ -6800,7 +6816,7 @@ fn test_quarkdrive_clears_when_electricterrain_ends() {
     state.side_one.get_active().ability = Abilities::QUARKDRIVE;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::QUARKDRIVEATK);
     state.terrain.terrain_type = Terrain::ELECTRICTERRAIN;
     state.terrain.turns_remaining = 1;
@@ -6837,7 +6853,7 @@ fn test_quarkdrive_stays_up_but_consumes_boosterenergy_when_electricterrain_ends
     state.side_one.get_active().item = Items::BOOSTERENERGY;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::QUARKDRIVEATK);
     state.terrain.terrain_type = Terrain::ELECTRICTERRAIN;
     state.terrain.turns_remaining = 1;
@@ -6873,7 +6889,7 @@ fn test_switching_out_while_other_side_is_partiallytrapped() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::PARTIALLYTRAPPED);
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
@@ -7066,7 +7082,7 @@ fn test_protosynthesisatk_does_not_boost_spa() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::PROTOSYNTHESISATK);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -7090,7 +7106,7 @@ fn test_protosynthesisspa_boosts_spa() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::PROTOSYNTHESISSPA);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -7114,7 +7130,7 @@ fn test_protosynthesisspd_boosts_spd() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::PROTOSYNTHESISSPD);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -7134,6 +7150,7 @@ fn test_protosynthesisspd_boosts_spd() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_chillyreception() {
     let mut state = State::default();
     state.side_one.get_active().speed = 150;
@@ -7166,6 +7183,7 @@ fn test_chillyreception() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_faster_uturn() {
     let mut state = State::default();
     state.side_one.get_active().speed = 150;
@@ -7302,6 +7320,7 @@ fn test_partingshot_into_protect_does_not_cause_switchout() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_partingshot_into_substitute_causes_switchout() {
     let mut state = State::default();
 
@@ -7337,6 +7356,7 @@ fn test_partingshot_into_substitute_causes_switchout() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_faster_uturn_does_not_trigger_end_of_turn() {
     let mut state = State::default();
     state.weather.weather_type = Weather::SAND; // would normally cause damage to both sides
@@ -7367,6 +7387,7 @@ fn test_faster_uturn_does_not_trigger_end_of_turn() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_faster_uturn_knocking_out_opponent() {
     let mut state = State::default();
     state.side_one.get_active().speed = 150;
@@ -7397,6 +7418,7 @@ fn test_faster_uturn_knocking_out_opponent() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_faster_uturn_with_opponent_move() {
     let mut state = State::default();
     state.side_one.get_active().speed = 150;
@@ -7426,6 +7448,7 @@ fn test_faster_uturn_with_opponent_move() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_slower_uturn_with_opponent_move() {
     let mut state = State::default();
     state.side_one.get_active().speed = 100;
@@ -7459,6 +7482,7 @@ fn test_slower_uturn_with_opponent_move() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_switch_out_move_does_not_trigger_end_of_turn() {
     let mut state = State::default();
     state.weather.weather_type = Weather::SAND; // would normally cause damage to both sides
@@ -7564,7 +7588,7 @@ fn test_switchout_flag_where_faster_switchout_move_knocked_out_opponent() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -7623,7 +7647,7 @@ fn test_switch_out_move_flag_is_unset_after_next_move() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -7663,7 +7687,7 @@ fn test_end_of_turn_triggered_when_switchout_flag_is_removed() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -7705,7 +7729,7 @@ fn test_end_of_turn_triggered_when_switchout_flag_is_removed_and_other_side_did_
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -7757,7 +7781,7 @@ fn test_noretreat_traps_pokemon() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::NORETREAT);
 
     let (side_one_moves, _side_two_moves) = state.get_all_options();
@@ -7765,24 +7789,24 @@ fn test_noretreat_traps_pokemon() {
     #[cfg(feature = "terastallization")]
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::MoveTera(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::MoveTera(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::MoveTera(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
-            MoveChoice::MoveTera(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::MoveTera { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::MoveTera { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::MoveTera { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::MoveTera { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
         ],
         side_one_moves
     );
     #[cfg(not(feature = "terastallization"))]
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
         ],
         side_one_moves
     );
@@ -7793,7 +7817,7 @@ fn test_meteorbeam_volatile_only_allows_meteor_beam_to_be_used() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::METEORBEAM);
     state.side_one.get_active().moves[&PokemonMoveIndex::M0] = Move {
         id: Choices::METEORBEAM,
@@ -7803,7 +7827,7 @@ fn test_meteorbeam_volatile_only_allows_meteor_beam_to_be_used() {
     };
     let (side_one_moves, _side_two_moves) = state.get_all_options();
 
-    assert_eq!(vec![MoveChoice::Move(PokemonMoveIndex::M0)], side_one_moves);
+    assert_eq!(vec![MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) }], side_one_moves);
 }
 
 #[test]
@@ -7848,9 +7872,9 @@ fn test_assaultvest_prevents_status_move() {
     let (side_one_moves, _) = state.get_all_options();
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
         ],
         side_one_moves
     );
@@ -7867,7 +7891,7 @@ fn test_taunt_prevents_status_move() {
     state.side_one.pokemon[PokemonIndex::P5].hp = 0;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TAUNT);
 
     state.side_one.get_active().moves[&PokemonMoveIndex::M0] = Move {
@@ -7901,9 +7925,9 @@ fn test_taunt_prevents_status_move() {
     let (side_one_moves, _) = state.get_all_options();
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
         ],
         side_one_moves
     );
@@ -7914,7 +7938,7 @@ fn test_taunt_prevents_status_move() {
 fn test_cannot_use_bloodmoon_after_using_bloodmoon() {
     let mut state = State::default();
 
-    state.side_one.last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
+    state.side_one.get_active().last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
     state.side_one.get_active().moves[&PokemonMoveIndex::M0] = Move {
         id: Choices::BLOODMOON,
         disabled: false,
@@ -7926,9 +7950,9 @@ fn test_cannot_use_bloodmoon_after_using_bloodmoon() {
     assert_eq!(
         vec![
             // no M0 because it cant be used twice
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -7940,10 +7964,10 @@ fn test_cannot_use_bloodmoon_after_using_bloodmoon() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -7965,14 +7989,14 @@ fn test_terastallization_side_one() {
     assert_eq!(
         vec![
             // can tera
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::MoveTera(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::MoveTera(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::MoveTera(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
-            MoveChoice::MoveTera(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::MoveTera { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::MoveTera { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::MoveTera { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::MoveTera { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -7985,10 +8009,10 @@ fn test_terastallization_side_one() {
     assert_eq!(
         vec![
             // cannot tera
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8010,14 +8034,14 @@ fn test_mega_evolve_options_side_one() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::MoveMega(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::MoveMega(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::MoveMega(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
-            MoveChoice::MoveMega(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::MoveMega { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::MoveMega { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::MoveMega { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::MoveMega { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8029,10 +8053,10 @@ fn test_mega_evolve_options_side_one() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8054,10 +8078,10 @@ fn test_mega_evolve_options_side_two() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8069,14 +8093,14 @@ fn test_mega_evolve_options_side_two() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::MoveMega(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::MoveMega(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::MoveMega(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
-            MoveChoice::MoveMega(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::MoveMega { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::MoveMega { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::MoveMega { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::MoveMega { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8098,10 +8122,10 @@ fn test_terastallization_side_two() {
     assert_eq!(
         vec![
             // cannot tera
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8114,14 +8138,14 @@ fn test_terastallization_side_two() {
     assert_eq!(
         vec![
             // can tera
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::MoveTera(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::MoveTera(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::MoveTera(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
-            MoveChoice::MoveTera(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::MoveTera { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::MoveTera { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::MoveTera { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::MoveTera { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8137,7 +8161,7 @@ fn test_terastallization_side_two() {
 fn test_cannot_use_gigatonhammer_after_using_gigatonhammer() {
     let mut state = State::default();
 
-    state.side_one.last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
+    state.side_one.get_active().last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
     state.side_one.get_active().moves[&PokemonMoveIndex::M0] = Move {
         id: Choices::GIGATONHAMMER,
         disabled: false,
@@ -8149,9 +8173,9 @@ fn test_cannot_use_gigatonhammer_after_using_gigatonhammer() {
     assert_eq!(
         vec![
             // no M0 because it cant be used twice
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8163,10 +8187,10 @@ fn test_cannot_use_gigatonhammer_after_using_gigatonhammer() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8182,7 +8206,7 @@ fn test_cannot_use_gigatonhammer_after_using_gigatonhammer() {
 fn test_can_use_gigatonhammer_after_using_switch() {
     let mut state = State::default();
 
-    state.side_one.last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
+    state.side_one.get_active().last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
     state.side_one.get_active().moves[&PokemonMoveIndex::M0] = Move {
         id: Choices::GIGATONHAMMER,
         disabled: false,
@@ -8193,10 +8217,10 @@ fn test_can_use_gigatonhammer_after_using_switch() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8208,10 +8232,10 @@ fn test_can_use_gigatonhammer_after_using_switch() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8227,7 +8251,7 @@ fn test_can_use_gigatonhammer_after_using_switch() {
 fn test_can_use_bloodmoon_after_using_switch() {
     let mut state = State::default();
 
-    state.side_one.last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
+    state.side_one.get_active().last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
     state.side_one.get_active().moves[&PokemonMoveIndex::M0] = Move {
         id: Choices::BLOODMOON,
         disabled: false,
@@ -8238,10 +8262,10 @@ fn test_can_use_bloodmoon_after_using_switch() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8253,10 +8277,10 @@ fn test_can_use_bloodmoon_after_using_switch() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8277,10 +8301,10 @@ fn test_arenatrap_traps_opponent() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8293,10 +8317,10 @@ fn test_arenatrap_traps_opponent() {
     // no switches allowed
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
         ],
         side_two_moves
     );
@@ -8313,10 +8337,10 @@ fn test_arenatrap_does_not_trap_flying() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8328,10 +8352,10 @@ fn test_arenatrap_does_not_trap_flying() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8353,10 +8377,10 @@ fn test_arenatrap_does_not_trap_ghost() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8368,10 +8392,10 @@ fn test_arenatrap_does_not_trap_ghost() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8393,10 +8417,10 @@ fn test_arenatrap_does_not_trap_shedshell() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8408,10 +8432,10 @@ fn test_arenatrap_does_not_trap_shedshell() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8450,16 +8474,16 @@ fn test_lockedmove_prevents_switches() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::LOCKEDMOVE);
 
     let (side_one_moves, _) = state.get_all_options();
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
         ],
         side_one_moves
     );
@@ -8474,9 +8498,9 @@ fn test_zero_pp_move_cannot_be_used() {
     let (side_one_moves, _) = state.get_all_options();
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideTwo, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -8512,7 +8536,7 @@ fn test_turn_after_switch_out_move_other_side_has_forced_move() {
         side_one_moves
     );
 
-    assert_eq!(vec![MoveChoice::Move(PokemonMoveIndex::M0)], side_two_moves);
+    assert_eq!(vec![MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) }], side_two_moves);
 }
 
 #[test]
@@ -8520,7 +8544,7 @@ fn test_noretreat_with_vs_already() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::NORETREAT);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -8767,8 +8791,8 @@ fn test_pressure_caused_double_pp_decrement() {
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -8814,8 +8838,8 @@ fn test_pressure_does_not_cause_pp_decrement_if_move_targets_self() {
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -8852,8 +8876,8 @@ fn test_pp_decremented() {
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -8898,8 +8922,8 @@ fn test_pp_not_decremented_when_flinched() {
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![
@@ -9002,7 +9026,7 @@ fn test_foulplay() {
     state.side_one.get_active().hp = 300;
     state.side_one.get_active().maxhp = 300;
     state.side_one.get_active().attack = 200; // 200 attack boosts side_two's FoulPlay 2x
-    state.side_one.attack_boost = 1; // 1 attack boost boosts side_two's FoulPlay 1.5x
+    state.side_one.get_active().attack_boost = 1; // 1 attack boost boosts side_two's FoulPlay 1.5x
 
     let first_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -9207,7 +9231,7 @@ fn test_bodypress() {
     state.side_two.get_active().hp = 1000;
     state.side_two.get_active().maxhp = 1000;
     state.side_one.get_active().defense = 200; // 200 defense boosts side_two's BodyPress 2x
-    state.side_one.defense_boost = 1; // 1 defense boost boosts side_two's BodyPress 1.5x
+    state.side_one.get_active().defense_boost = 1; // 1 defense boost boosts side_two's BodyPress 1.5x
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -9556,7 +9580,7 @@ fn test_healing_wish_activates_on_switchin() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -9596,7 +9620,7 @@ fn test_healing_wish_activates_if_only_statused() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -9632,7 +9656,7 @@ fn test_healing_wish_does_not_consume_on_healthy_pkmn() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -9655,7 +9679,7 @@ fn test_healing_wish_is_consumed_even_if_it_does_nothing() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -9931,9 +9955,9 @@ fn test_painsplit_on_substitute() {
     state.side_two.get_active().hp = 60;
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_two.substitute_health = 10;
+    state.side_two.get_active().substitute_health = 10;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -10523,8 +10547,8 @@ fn test_using_move_while_asleep_does_not_decrement_pp() {
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -10881,8 +10905,8 @@ fn test_large_chance_to_awaken_sleeptalk_move_when_not_rested() {
 fn test_fakeout_into_fakeout_sets_last_used_move() {
     let mut state = State::default();
     state.use_last_used_move = true;
-    state.side_one.last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
-    state.side_two.last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
+    state.side_one.get_active().last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
+    state.side_two.get_active().last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -11112,7 +11136,7 @@ fn test_gen5_switchout_while_sleep_resets_rest_turns() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -11144,7 +11168,7 @@ fn test_gen5_switchout_while_sleep_resets_sleep_turns() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -11341,7 +11365,7 @@ fn test_strengthsap_fails_at_negative_6_boost_on_opponent() {
     let mut state = State::default();
     state.side_one.get_active().maxhp = 500;
     state.side_one.get_active().hp = 100;
-    state.side_two.attack_boost = -6;
+    state.side_two.get_active().attack_boost = -6;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -11440,7 +11464,7 @@ fn test_gen9_protean_does_not_activate_when_already_typechanged() {
     state.side_one.get_active().base_types = (PokemonType::WATER, PokemonType::DARK);
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TYPECHANGE);
     state.side_one.get_active().ability = Abilities::PROTEAN;
 
@@ -11468,7 +11492,7 @@ fn test_gen6_gen7_gen8_protean_does_activate_when_already_typechanged() {
     state.side_one.get_active().base_types = (PokemonType::WATER, PokemonType::DARK);
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TYPECHANGE);
     state.side_one.get_active().ability = Abilities::PROTEAN;
 
@@ -11590,13 +11614,13 @@ fn test_switching_out_with_typechange_reverts_types() {
     state.side_one.get_active().base_types = (PokemonType::FIGHTING, PokemonType::ELECTRIC);
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TYPECHANGE);
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -11630,7 +11654,7 @@ fn test_switching_out_with_modified_ability_reverts_ability() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -11657,13 +11681,13 @@ fn test_switching_out_with_typechange_when_types_are_the_same() {
     state.side_one.get_active().base_types = (PokemonType::FIGHTING, PokemonType::ELECTRIC);
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TYPECHANGE);
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -11822,10 +11846,10 @@ fn test_slow_taunt_gets_applied_and_duration_does_not_increment() {
 ))]
 fn test_taunt_volatile_is_removed_end_of_turn_when_it_would_reach_3() {
     let mut state = State::default();
-    state.side_one.volatile_status_durations.taunt = 2;
+    state.side_one.get_active().volatile_status_durations.taunt = 2;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TAUNT);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -11861,11 +11885,11 @@ fn test_taunt_volatile_is_removed_end_of_turn_when_it_would_reach_3() {
 ))]
 fn test_taunt_re_enables_disabled_moves_when_being_removed() {
     let mut state = State::default();
-    state.side_one.volatile_status_durations.taunt = 2;
+    state.side_one.get_active().volatile_status_durations.taunt = 2;
     state.side_one.get_active().moves.m1.disabled = true;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TAUNT);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -11905,15 +11929,15 @@ fn test_taunt_re_enables_disabled_moves_when_being_removed() {
 ))]
 fn test_switching_out_with_taunt_resets_duration_to_0() {
     let mut state = State::default();
-    state.side_one.volatile_status_durations.taunt = 1;
+    state.side_one.get_active().volatile_status_durations.taunt = 1;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TAUNT);
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -11969,7 +11993,7 @@ fn test_substitute_blocks_yawn() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -12011,7 +12035,7 @@ fn test_protect_blocks_yawn() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -12045,9 +12069,9 @@ fn test_yawn_with_duration_causes_pkmn_to_sleep() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::YAWN);
-    state.side_two.volatile_status_durations.yawn = 1;
+    state.side_two.get_active().volatile_status_durations.yawn = 1;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -12083,14 +12107,14 @@ fn test_yawn_and_duration_removed_on_switch() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::YAWN);
-    state.side_one.volatile_status_durations.yawn = 1;
+    state.side_one.get_active().volatile_status_durations.yawn = 1;
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -12120,9 +12144,9 @@ fn test_cannot_reapply_yawn_when_already_inflicted() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::YAWN);
-    state.side_two.volatile_status_durations.yawn = 1;
+    state.side_two.get_active().volatile_status_durations.yawn = 1;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -12158,9 +12182,9 @@ fn test_yawn_is_removed_but_no_status_change_if_pkmn_already_statused() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::YAWN);
-    state.side_two.volatile_status_durations.yawn = 1;
+    state.side_two.get_active().volatile_status_durations.yawn = 1;
     state.side_two.get_active().status = PokemonStatus::POISON;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -12654,9 +12678,9 @@ fn test_perish_bypasses_sub() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_two.substitute_health = 50;
+    state.side_two.get_active().substitute_health = 50;
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
         Choices::PERISHSONG,
@@ -12784,7 +12808,7 @@ fn test_perish_cannot_be_applied_to_pkmn_with_a_perish_volatile() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::PERISH2);
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -12825,7 +12849,7 @@ fn test_perish1_causes_faint_end_of_turn() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::PERISH1);
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -12848,13 +12872,13 @@ fn test_perish1_switching_out_prevents_faint() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::PERISH1);
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -12881,7 +12905,7 @@ fn test_leechseed_does_not_trigger_if_receiving_side_fainted_this_turn() {
     state.side_two.get_active().hp = 50;
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::LEECHSEED);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -12905,9 +12929,9 @@ fn test_leechseed_into_substitute() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_two.substitute_health = 10;
+    state.side_two.get_active().substitute_health = 10;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -12964,7 +12988,7 @@ fn test_solarbeam_with_active_volatile_status() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SOLARBEAM);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -13178,7 +13202,7 @@ fn test_meteorbeam_executing() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::METEORBEAM);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -13219,7 +13243,7 @@ fn test_electroshot_executing() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::ELECTROSHOT);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -13521,8 +13545,8 @@ fn test_toxic_count_is_reset_even_if_toxic_is_reapplied_the_same_turn() {
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -13601,7 +13625,7 @@ fn test_switching_into_neutralizinggas_pokemon_when_other_side_has_toxic_count_a
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -13757,9 +13781,9 @@ fn test_thief_does_not_steal_if_hit_sub() {
     state.side_two.get_active().item = Items::EXPERTBELT;
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_two.substitute_health = 25;
+    state.side_two.get_active().substitute_health = 25;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -13940,9 +13964,9 @@ fn test_trick_against_substitute_fails() {
     state.side_two.get_active().item = Items::LEFTOVERS;
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_two.substitute_health = 10;
+    state.side_two.get_active().substitute_health = 10;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -14015,6 +14039,7 @@ fn test_iceface_eiscue_taking_physical_hit() {
 }
 
 #[test]
+#[cfg(not(feature = "doubles"))] // singles per-side force_switch; doubles: per-slot (test_doubles.rs)
 fn test_iceface_eiscue_taking_uturn() {
     let mut state = State::default();
     state.side_one.get_active().id = PokemonName::EISCUE;
@@ -14182,7 +14207,7 @@ fn test_iceface_eiscuenoice_switching_into_snow() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -14236,7 +14261,7 @@ fn test_iceface_eiscuenoice_switching_into_hail() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -15079,7 +15104,7 @@ fn test_scenario_where_choice_gets_updated_on_second_move_that_has_branched_on_f
 #[test]
 fn test_lowered_accuracy() {
     let mut state = State::default();
-    state.side_one.accuracy_boost = -1;
+    state.side_one.get_active().accuracy_boost = -1;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -15154,7 +15179,7 @@ fn test_pursuit() {
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         &MoveChoice::Switch(PokemonIndex::P1),
     );
 
@@ -15266,10 +15291,10 @@ fn test_basic_multi_hit_move() {
 #[test]
 fn test_multi_hit_move_where_first_hit_breaks_substitute() {
     let mut state = State::default();
-    state.side_two.substitute_health = 10;
+    state.side_two.get_active().substitute_health = 10;
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -15476,10 +15501,10 @@ fn test_population_bomb_with_widelens() {
 fn test_triple_multihit_move_versus_substitute_and_rockyhelmet() {
     let mut state = State::default();
     state.side_two.get_active().item = Items::ROCKYHELMET;
-    state.side_two.substitute_health = 25;
+    state.side_two.get_active().substitute_health = 25;
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -15568,9 +15593,9 @@ fn test_lifeorb_hitting_sub() {
     state.side_one.get_active().item = Items::LIFEORB;
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_two.substitute_health = 10;
+    state.side_two.get_active().substitute_health = 10;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -16768,7 +16793,7 @@ fn test_owntempo_versus_intimidate() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -16791,7 +16816,7 @@ fn test_intimidate_into_whiteherb() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -16831,7 +16856,7 @@ fn test_defiant_against_intimidate() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -16866,7 +16891,7 @@ fn test_competitive_against_intimidate() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -16901,7 +16926,7 @@ fn test_magicguard_switching_into_rocks() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -16924,7 +16949,7 @@ fn test_magicguard_switching_into_webs() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -16957,7 +16982,7 @@ fn test_magicguard_switching_into_all_hazards() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -16992,7 +17017,7 @@ fn test_dauntlessshield() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17021,7 +17046,7 @@ fn test_intrepidsword() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17050,7 +17075,7 @@ fn test_emobdyaspectteal_switching_in() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17079,7 +17104,7 @@ fn test_slowstart_activates_on_switch_in() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17113,10 +17138,10 @@ fn test_slowstart_activates_on_switch_in() {
 fn test_slowstart_duration_decrement() {
     let mut state = State::default();
     state.side_one.get_active().ability = Abilities::SLOWSTART;
-    state.side_one.volatile_status_durations.slowstart = 6;
+    state.side_one.get_active().volatile_status_durations.slowstart = 6;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SLOWSTART);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -17142,10 +17167,10 @@ fn test_slowstart_duration_decrement() {
 fn test_slowstart_is_removed_when_durations_reach_zero() {
     let mut state = State::default();
     state.side_one.get_active().ability = Abilities::SLOWSTART;
-    state.side_one.volatile_status_durations.slowstart = 1;
+    state.side_one.get_active().volatile_status_durations.slowstart = 1;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SLOWSTART);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -17180,7 +17205,7 @@ fn test_oblivious_versus_intimidate() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17203,7 +17228,7 @@ fn test_drizzle() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17235,7 +17260,7 @@ fn test_drizzle() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17268,7 +17293,7 @@ fn test_primordial_sea_on_switchout() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17301,7 +17326,7 @@ fn test_desolateland_on_switchout() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17331,7 +17356,7 @@ fn test_electricsurge() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17426,7 +17451,7 @@ fn test_hadronenegine_terrain_application() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17458,7 +17483,7 @@ fn test_orichalcumpulse_weather_application() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17607,7 +17632,7 @@ fn test_screencleaner() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17692,7 +17717,7 @@ fn test_drought() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17723,7 +17748,7 @@ fn test_drought() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17755,7 +17780,7 @@ fn test_pre_gen9_snowwarning() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17795,7 +17820,7 @@ fn test_gen9_snowwarning() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17828,7 +17853,7 @@ fn test_download_for_defense() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17853,7 +17878,7 @@ fn test_download_for_defense() {
 fn test_download_for_defense_when_switching_in_with_baton_boosted_max_attack() {
     let mut state = State::default();
     state.side_one.pokemon[PokemonIndex::P1].ability = Abilities::DOWNLOAD;
-    state.side_one.attack_boost = 6;
+    state.side_one.get_active().attack_boost = 6;
     state.side_one.baton_passing = true;
     state.side_two.get_active().defense = 100;
     state.side_two.get_active().special_defense = 150;
@@ -17890,7 +17915,7 @@ fn test_download_for_special_defense() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17920,7 +17945,7 @@ fn test_innerfocus_versus_intimidate() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -17943,7 +17968,7 @@ fn test_scrappy_versus_intimidate() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -18068,8 +18093,8 @@ fn test_terastallizing() {
     state.side_two.get_active().terastallized = false;
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::MoveTera(PokemonMoveIndex::M0),
-        &MoveChoice::MoveTera(PokemonMoveIndex::M0),
+        &MoveChoice::MoveTera { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::MoveTera { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -18112,7 +18137,7 @@ fn test_basic_mega_evolving() {
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::MoveMega(PokemonMoveIndex::M0),
+        &MoveChoice::MoveMega { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         &MoveChoice::None,
     );
 
@@ -18174,7 +18199,7 @@ fn test_mega_evolving_with_ability_activate() {
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::MoveMega(PokemonMoveIndex::M0),
+        &MoveChoice::MoveMega { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         &MoveChoice::None,
     );
 
@@ -18220,15 +18245,15 @@ fn test_substitute_versus_intimidate() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_two.substitute_health = 25;
+    state.side_two.get_active().substitute_health = 25;
     state.side_one.pokemon[PokemonIndex::P1].ability = Abilities::INTIMIDATE;
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -18250,7 +18275,7 @@ fn test_intimidate() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -18282,7 +18307,7 @@ fn test_trace_switching_ability_on_switch_in_activating_said_ability() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -18316,7 +18341,7 @@ fn test_adrenalineorb_against_intimidate() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -18355,12 +18380,12 @@ fn test_adrenalineorb_against_intimidate_when_already_at_max_speed() {
     let mut state = State::default();
     state.side_one.pokemon[PokemonIndex::P1].ability = Abilities::INTIMIDATE;
     state.side_two.get_active().item = Items::ADRENALINEORB;
-    state.side_two.speed_boost = 6;
+    state.side_two.get_active().speed_boost = 6;
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -18391,7 +18416,7 @@ fn test_adrenaline_orb_activates_if_immune_to_intimidate() {
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
         &MoveChoice::Switch(PokemonIndex::P1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![StateInstructions {
@@ -18712,7 +18737,7 @@ fn test_weaknesspolicy_does_not_overboost() {
     state.side_two.get_active().item = Items::WEAKNESSPOLICY;
     state.side_two.get_active().hp = 200;
     state.side_two.get_active().maxhp = 200;
-    state.side_two.attack_boost = 5;
+    state.side_two.get_active().attack_boost = 5;
     state.side_two.get_active().types = (PokemonType::FIRE, PokemonType::NORMAL);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -18762,7 +18787,7 @@ fn test_switching_in_with_grassyseed_in_grassy_terrain() {
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         &MoveChoice::Switch(PokemonIndex::P1),
     );
 
@@ -18805,7 +18830,7 @@ fn test_contrary_with_seed() {
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         &MoveChoice::Switch(PokemonIndex::P1),
     );
 
@@ -18837,7 +18862,7 @@ fn test_contrary_with_seed() {
 fn test_contrary_when_pre_swapped_boost_goes_above_max() {
     let mut state = State::default();
     state.side_two.get_active().ability = Abilities::CONTRARY;
-    state.side_two.attack_boost = 6;
+    state.side_two.get_active().attack_boost = 6;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -21178,8 +21203,8 @@ fn test_sleeptalk_when_asleep_and_rest_turns_active() {
         .replace_move(PokemonMoveIndex::M3, Choices::CURSE);
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M1),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
     );
 
     let expected_instructions = vec![
@@ -21563,7 +21588,7 @@ fn test_using_move_with_truant_removes_volatile() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TRUANT);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -21589,7 +21614,7 @@ fn test_switching_with_truant_removes_volatile() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TRUANT);
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
@@ -21689,7 +21714,7 @@ fn test_using_none_with_mustrecharge_removes_volatile() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::MUSTRECHARGE);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -21716,7 +21741,7 @@ fn test_mustrecharge_move_only_allows_none() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::MUSTRECHARGE);
 
     let options = state.get_all_options();
@@ -21724,10 +21749,10 @@ fn test_mustrecharge_move_only_allows_none() {
     let expected_options = (
         vec![MoveChoice::None],
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
-            MoveChoice::Move(PokemonMoveIndex::M1),
-            MoveChoice::Move(PokemonMoveIndex::M2),
-            MoveChoice::Move(PokemonMoveIndex::M3),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M1, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M2, target: BattlePosition::new(SideReference::SideOne, 0) },
+            MoveChoice::Move { move_index: PokemonMoveIndex::M3, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),

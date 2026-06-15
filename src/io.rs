@@ -1,20 +1,27 @@
 use crate::choices::{Choice, Choices, MoveCategory, MOVES};
+use crate::decision::{self, choice_to_string, parse_side_choice, SideChoice};
 use crate::engine::evaluate::evaluate;
-use crate::engine::generate_instructions::{
-    calculate_both_damage_rolls, generate_instructions_from_move_pair,
-};
-use crate::engine::state::MoveChoice;
+use crate::engine::generate_instructions::calculate_both_damage_rolls;
 use crate::instruction::{Instruction, StateInstructions};
 use crate::mcts::{perform_mcts, MctsResult};
 use crate::mcts_threaded::perform_mcts_shared_tree;
 use crate::search::{expectiminimax_search, iterative_deepen_expectiminimax, pick_safest};
-use crate::state::State;
+use crate::state::{SideReference, State};
 use clap::Parser;
 use std::io;
 use std::io::Write;
 use std::process::exit;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+
+/// Default expectiminimax depth for the `expectiminimax` subcommand. The doubles
+/// payoff matrix is the cartesian product of each side's per-slot actions
+/// (hundreds × hundreds), so the default is kept at 1 there; MCTS is the
+/// recommended doubles engine.
+#[cfg(not(feature = "doubles"))]
+const DEFAULT_EXPECTIMINIMAX_DEPTH: i8 = 2;
+#[cfg(feature = "doubles")]
+const DEFAULT_EXPECTIMINIMAX_DEPTH: i8 = 1;
 
 struct IOData {
     state: State,
@@ -48,7 +55,7 @@ struct Expectiminimax {
     #[clap(short, long, default_value_t = false)]
     ab_prune: bool,
 
-    #[clap(short, long, default_value_t = 2)]
+    #[clap(short, long, default_value_t = DEFAULT_EXPECTIMINIMAX_DEPTH)]
     depth: i8,
 }
 
@@ -112,8 +119,8 @@ impl Default for IOData {
 
 fn pprint_expectiminimax_result(
     result: &Vec<f32>,
-    s1_options: &Vec<MoveChoice>,
-    s2_options: &Vec<MoveChoice>,
+    s1_options: &Vec<SideChoice>,
+    s2_options: &Vec<SideChoice>,
     safest_choice: &(usize, f32),
     state: &State,
 ) {
@@ -123,13 +130,12 @@ fn pprint_expectiminimax_result(
     print!("{: <12}", " ");
 
     for s2_move in s2_options.iter() {
-        print!("{: >12}", s2_move.to_string(&state.side_two));
+        print!("{: >12}", choice_to_string(s2_move, &state.side_two));
     }
     print!("\n");
 
     for i in 0..s1_len {
-        let s1_move_str = s1_options[i];
-        print!("{:<12}", s1_move_str.to_string(&state.side_one));
+        print!("{:<12}", choice_to_string(&s1_options[i], &state.side_one));
         for j in 0..s2_len {
             let index = i * s2_len + j;
             print!("{number:>11.2} ", number = result[index]);
@@ -138,7 +144,7 @@ fn pprint_expectiminimax_result(
     }
     print!(
         "{:<12}",
-        s1_options[safest_choice.0].to_string(&state.side_one)
+        choice_to_string(&s1_options[safest_choice.0], &state.side_one)
     );
 }
 
@@ -149,7 +155,7 @@ fn print_mcts_result(state: &State, result: MctsResult) {
         .map(|x| {
             format!(
                 "{},{:.2},{}",
-                x.move_choice.to_string(&state.side_one),
+                choice_to_string(&x.move_choice, &state.side_one),
                 x.total_score,
                 x.visits
             )
@@ -162,7 +168,7 @@ fn print_mcts_result(state: &State, result: MctsResult) {
         .map(|x| {
             format!(
                 "{},{:.2},{}",
-                x.move_choice.to_string(&state.side_two),
+                choice_to_string(&x.move_choice, &state.side_two),
                 x.total_score,
                 x.visits
             )
@@ -185,7 +191,7 @@ fn pprint_mcts_result(state: &State, result: MctsResult) {
     for x in result.s1.iter() {
         println!(
             "\t{:<25}{:>12.2}{:>12.2}{:>10}{:>10.2}",
-            x.move_choice.to_string(&state.side_one),
+            choice_to_string(&x.move_choice, &state.side_one),
             x.total_score,
             x.total_score / x.visits as f32,
             x.visits,
@@ -201,7 +207,7 @@ fn pprint_mcts_result(state: &State, result: MctsResult) {
     for x in result.s2.iter() {
         println!(
             "\t{:<25}{:>12.2}{:>12.2}{:>10}{:>10.2}",
-            x.move_choice.to_string(&state.side_two),
+            choice_to_string(&x.move_choice, &state.side_two),
             x.total_score,
             x.total_score / x.visits as f32,
             x.visits,
@@ -219,23 +225,23 @@ fn pprint_state_instruction_vector(instructions: &Vec<StateInstructions>) {
 
 fn print_subcommand_result(
     result: &Vec<f32>,
-    side_one_options: &Vec<MoveChoice>,
-    side_two_options: &Vec<MoveChoice>,
+    side_one_options: &Vec<SideChoice>,
+    side_two_options: &Vec<SideChoice>,
     state: &State,
 ) {
     let safest = pick_safest(&result, side_one_options.len(), side_two_options.len());
-    let move_choice = side_one_options[safest.0];
+    let move_choice = &side_one_options[safest.0];
 
     let joined_side_one_options = side_one_options
         .iter()
-        .map(|x| format!("{}", x.to_string(&state.side_one)))
+        .map(|x| choice_to_string(x, &state.side_one))
         .collect::<Vec<String>>()
         .join(",");
     println!("side one options: {}", joined_side_one_options);
 
     let joined_side_two_options = side_two_options
         .iter()
-        .map(|x| format!("{}", x.to_string(&state.side_two)))
+        .map(|x| choice_to_string(x, &state.side_two))
         .collect::<Vec<String>>()
         .join(",");
     println!("side two options: {}", joined_side_two_options);
@@ -246,7 +252,7 @@ fn print_subcommand_result(
         .collect::<Vec<String>>()
         .join(",");
     println!("matrix: {}", joined);
-    println!("choice: {}", move_choice.to_string(&state.side_one));
+    println!("choice: {}", choice_to_string(move_choice, &state.side_one));
     println!("evaluation: {}", safest.1);
 }
 
@@ -271,7 +277,7 @@ pub fn main() {
         Some(subcmd) => match subcmd {
             SubCommand::Expectiminimax(expectiminimax) => {
                 state = State::deserialize(expectiminimax.state.as_str());
-                (side_one_options, side_two_options) = state.root_get_all_options();
+                (side_one_options, side_two_options) = decision::root_get_all_options(&state);
                 result = expectiminimax_search(
                     &mut state,
                     expectiminimax.depth,
@@ -284,7 +290,7 @@ pub fn main() {
             }
             SubCommand::IterativeDeepening(iterative_deepending) => {
                 state = State::deserialize(iterative_deepending.state.as_str());
-                (side_one_options, side_two_options) = state.root_get_all_options();
+                (side_one_options, side_two_options) = decision::root_get_all_options(&state);
                 (side_one_options, side_two_options, result, _) = iterative_deepen_expectiminimax(
                     &mut state,
                     side_one_options.clone(),
@@ -295,7 +301,7 @@ pub fn main() {
             }
             SubCommand::MonteCarloTreeSearch(mcts) => {
                 state = State::deserialize(mcts.state.as_str());
-                (side_one_options, side_two_options) = state.root_get_all_options();
+                (side_one_options, side_two_options) = decision::root_get_all_options(&state);
                 let result = if mcts.threads > 1 {
                     perform_mcts_shared_tree(
                         &mut state,
@@ -336,9 +342,10 @@ pub fn main() {
             SubCommand::GenerateInstructions(generate_instructions) => {
                 state = State::deserialize(generate_instructions.state.as_str());
                 let (s1_movechoice, s2_movechoice);
-                match MoveChoice::from_string(
+                match parse_side_choice(
                     generate_instructions.side_one_move.as_str(),
                     &state.side_one,
+                    SideReference::SideOne,
                 ) {
                     None => {
                         println!(
@@ -349,9 +356,10 @@ pub fn main() {
                     }
                     Some(v) => s1_movechoice = v,
                 }
-                match MoveChoice::from_string(
+                match parse_side_choice(
                     generate_instructions.side_two_move.as_str(),
                     &state.side_two,
+                    SideReference::SideTwo,
                 ) {
                     None => {
                         println!(
@@ -362,7 +370,7 @@ pub fn main() {
                     }
                     Some(v) => s2_movechoice = v,
                 }
-                let instructions = generate_instructions_from_move_pair(
+                let instructions = decision::generate_instructions(
                     &mut state,
                     &s1_movechoice,
                     &s2_movechoice,
@@ -444,7 +452,11 @@ fn command_loop(mut io_data: IOData) {
             "generate-instructions" | "g" => {
                 let (s1_move, s2_move);
                 match args.next() {
-                    Some(s) => match MoveChoice::from_string(s, &io_data.state.side_one) {
+                    Some(s) => match parse_side_choice(
+                        s,
+                        &io_data.state.side_one,
+                        SideReference::SideOne,
+                    ) {
                         Some(m) => {
                             s1_move = m;
                         }
@@ -459,7 +471,11 @@ fn command_loop(mut io_data: IOData) {
                     }
                 }
                 match args.next() {
-                    Some(s) => match MoveChoice::from_string(s, &io_data.state.side_two) {
+                    Some(s) => match parse_side_choice(
+                        s,
+                        &io_data.state.side_two,
+                        SideReference::SideTwo,
+                    ) {
                         Some(m) => {
                             s2_move = m;
                         }
@@ -473,7 +489,7 @@ fn command_loop(mut io_data: IOData) {
                         continue;
                     }
                 }
-                let instructions = generate_instructions_from_move_pair(
+                let instructions = decision::generate_instructions(
                     &mut io_data.state,
                     &s1_move,
                     &s2_move,
@@ -535,7 +551,7 @@ fn command_loop(mut io_data: IOData) {
             "iterative-deepening" | "id" => match args.next() {
                 Some(s) => {
                     let max_time_ms = s.parse::<u64>().unwrap();
-                    let (side_one_options, side_two_options) = io_data.state.root_get_all_options();
+                    let (side_one_options, side_two_options) = decision::root_get_all_options(&io_data.state);
 
                     let start_time = std::time::Instant::now();
                     let (s1_moves, s2_moves, result, depth_searched) =
@@ -567,7 +583,7 @@ fn command_loop(mut io_data: IOData) {
             "monte-carlo-tree-search" | "mcts" => match args.next() {
                 Some(s) => {
                     let max_time_ms = s.parse::<u64>().unwrap();
-                    let (side_one_options, side_two_options) = io_data.state.root_get_all_options();
+                    let (side_one_options, side_two_options) = decision::root_get_all_options(&io_data.state);
 
                     let start_time = std::time::Instant::now();
                     let result = perform_mcts(
@@ -605,7 +621,7 @@ fn command_loop(mut io_data: IOData) {
                         continue;
                     }
                 };
-                let (side_one_options, side_two_options) = io_data.state.root_get_all_options();
+                let (side_one_options, side_two_options) = decision::root_get_all_options(&io_data.state);
                 let start_time = std::time::Instant::now();
                 let result = perform_mcts_shared_tree(
                     &mut io_data.state,
@@ -658,7 +674,7 @@ fn command_loop(mut io_data: IOData) {
                         None => {}
                     }
                     let depth = s.parse::<i8>().unwrap();
-                    let (side_one_options, side_two_options) = io_data.state.root_get_all_options();
+                    let (side_one_options, side_two_options) = decision::root_get_all_options(&io_data.state);
                     let start_time = std::time::Instant::now();
                     let result = expectiminimax_search(
                         &mut io_data.state,

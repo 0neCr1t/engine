@@ -295,7 +295,7 @@ fn test_thunderwave_can_paralyze_normal_type() {
 fn test_paralysis_nullify_ignores_paralysis() {
     let mut state = State::default();
     state.side_one.get_active().speed = 100;
-    state.side_one.speed_boost = 2;
+    state.side_one.get_active().speed_boost = 2;
     state.side_one.get_active().status = PokemonStatus::PARALYZE;
     state.side_two.get_active().speed = 195;
 
@@ -305,7 +305,7 @@ fn test_paralysis_nullify_ignores_paralysis() {
     let moves_first_before = moves_first(&state, &s1_choice, &s2_choice);
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::GEN1PARALYSISNULLIFY);
     let moves_first_after_volatile = moves_first(&state, &s1_choice, &s2_choice);
 
@@ -318,10 +318,10 @@ fn test_gen1_swordsdance_while_burned_volatile_increases_damage() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::GEN1BURNNULLIFY);
     state.side_one.get_active().status = PokemonStatus::BURN;
-    state.side_one.attack_boost = 2;
+    state.side_one.get_active().attack_boost = 2;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -385,7 +385,7 @@ fn test_does_not_set_burn_nullify_if_already_exists() {
     state.side_one.get_active().status = PokemonStatus::BURN;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::GEN1BURNNULLIFY);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -451,7 +451,7 @@ fn test_does_not_set_paralysisnullify_if_already_exists() {
     state.side_one.get_active().status = PokemonStatus::PARALYZE;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::GEN1PARALYSISNULLIFY);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -512,7 +512,7 @@ fn test_reflect_halves_physical_damage_as_volatile() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::REFLECT);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -562,7 +562,7 @@ fn test_lightscreen_halves_special_damage_as_volatile() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::LIGHTSCREEN);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -586,9 +586,9 @@ fn test_thunderwave_into_substitute() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_two.substitute_health = 20;
+    state.side_two.get_active().substitute_health = 20;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -608,9 +608,9 @@ fn test_confuseray_into_substitute() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_two.substitute_health = 20;
+    state.side_two.get_active().substitute_health = 20;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -802,7 +802,7 @@ fn test_special_attack_boosts_defense() {
     );
 
     // side 2 getting a SPA boost should cause side 1 to deal less damage
-    state.side_two.special_attack_boost = 1;
+    state.side_two.get_active().special_attack_boost = 1;
 
     let boosted_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -1094,7 +1094,7 @@ fn test_crit_roll_ignores_reflect() {
     state.side_one.get_active().id = PokemonName::PERSIAN;
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::REFLECT);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -1126,7 +1126,7 @@ fn test_crit_roll_ignores_reflect() {
 fn test_crit_roll_ignores_own_boost() {
     let mut state = State::default();
     state.side_one.get_active().id = PokemonName::PERSIAN;
-    state.side_one.attack_boost = 1;
+    state.side_one.get_active().attack_boost = 1;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -1157,7 +1157,7 @@ fn test_crit_roll_ignores_own_boost() {
 fn test_crit_roll_ignores_other_boost() {
     let mut state = State::default();
     state.side_one.get_active().id = PokemonName::PERSIAN;
-    state.side_two.defense_boost = 1;
+    state.side_two.get_active().defense_boost = 1;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -1188,7 +1188,7 @@ fn test_crit_roll_ignores_other_boost() {
 fn test_crit_roll_ignores_other_boost_negative_boost() {
     let mut state = State::default();
     state.side_one.get_active().id = PokemonName::PERSIAN;
-    state.side_two.defense_boost = -1;
+    state.side_two.get_active().defense_boost = -1;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -1280,7 +1280,7 @@ fn test_using_none_with_mustrecharge_removes_volatile() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::MUSTRECHARGE);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -1306,7 +1306,7 @@ fn test_mustrecharge_move_only_allows_none() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::MUSTRECHARGE);
 
     let options = state.get_all_options();

@@ -1,4 +1,8 @@
-#![cfg(not(any(feature = "gen1", feature = "gen2", feature = "gen3")))]
+// Singles behavior suite (see tests/test_battle_mechanics.rs): genx singles only.
+#![cfg(all(
+    not(any(feature = "gen1", feature = "gen2", feature = "gen3")),
+    not(feature = "doubles")
+))]
 
 use poke_engine::choices::Choices;
 use poke_engine::engine::generate_instructions::generate_instructions_from_move_pair;
@@ -22,7 +26,9 @@ use poke_engine::instruction::{BoostInstruction, ChangeVolatileStatusDurationIns
 
 use poke_engine::engine::state::{MoveChoice, PokemonVolatileStatus};
 
-use poke_engine::state::{LastUsedMove, PokemonIndex, PokemonMoveIndex, SideReference, State};
+use poke_engine::state::{
+    BattlePosition, LastUsedMove, PokemonIndex, PokemonMoveIndex, SideReference, State,
+};
 
 #[test]
 fn test_last_used_move_is_set_on_switch() {
@@ -68,8 +74,8 @@ fn test_last_used_move_is_set_on_move() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -121,8 +127,8 @@ fn test_last_used_move_overwritten_when_dragged_out() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -165,9 +171,9 @@ fn test_encore_causes_get_all_options_to_only_allow_last_used_move() {
     state.use_last_used_move = true;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::ENCORE);
-    state.side_one.last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
+    state.side_one.get_active().last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
     state
         .side_one
         .get_active()
@@ -177,7 +183,7 @@ fn test_encore_causes_get_all_options_to_only_allow_last_used_move() {
 
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -196,9 +202,9 @@ fn test_encore_and_arenatrapped_together() {
     state.side_two.get_active().ability = Abilities::ARENATRAP;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::ENCORE);
-    state.side_one.last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
+    state.side_one.get_active().last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
     state
         .side_one
         .get_active()
@@ -207,7 +213,7 @@ fn test_encore_and_arenatrapped_together() {
     let (side_one_moves, _side_two_moves) = state.get_all_options();
 
     assert_eq!(
-        vec![MoveChoice::Move(PokemonMoveIndex::M0),],
+        vec![MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },],
         side_one_moves
     );
 }
@@ -233,8 +239,8 @@ fn test_encore_slow() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -269,7 +275,7 @@ fn test_encore_slow() {
     let (_side_one_moves, side_two_moves) = state.get_all_options();
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -301,8 +307,8 @@ fn test_encore_slow_into_substitute() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -345,7 +351,7 @@ fn test_encore_slow_into_substitute() {
     let (_side_one_moves, side_two_moves) = state.get_all_options();
     assert_eq!(
         vec![
-            MoveChoice::Move(PokemonMoveIndex::M0),
+            MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideOne, 0) },
             MoveChoice::Switch(PokemonIndex::P1),
             MoveChoice::Switch(PokemonIndex::P2),
             MoveChoice::Switch(PokemonIndex::P3),
@@ -374,12 +380,12 @@ fn test_encore_fast_fails_with_lastusedmove_equal_to_switch() {
         .side_two
         .get_active()
         .replace_move(PokemonMoveIndex::M1, Choices::WATERGUN);
-    state.side_two.last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
+    state.side_two.get_active().last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -423,12 +429,12 @@ fn test_encore_fast_fails_with_lastusedmove_equal_to_none() {
         .side_two
         .get_active()
         .replace_move(PokemonMoveIndex::M1, Choices::WATERGUN);
-    state.side_two.last_used_move = LastUsedMove::None;
+    state.side_two.get_active().last_used_move = LastUsedMove::None;
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -464,11 +470,11 @@ fn test_encore_second_fails_when_opponent_switches() {
         .side_one
         .get_active()
         .replace_move(PokemonMoveIndex::M0, Choices::ENCORE);
-    state.side_two.last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
+    state.side_two.get_active().last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         &MoveChoice::Switch(PokemonIndex::P1),
         false,
     );
@@ -515,13 +521,13 @@ fn test_fast_encore_into_using_a_different_move_from_lum() {
         .side_two
         .get_active()
         .replace_move(PokemonMoveIndex::M1, Choices::SWORDSDANCE);
-    state.side_two.last_used_move = LastUsedMove::Move(PokemonMoveIndex::M1);
+    state.side_two.get_active().last_used_move = LastUsedMove::Move(PokemonMoveIndex::M1);
 
     // side_two will try to use tackle, but will encored into watergun from last turn
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -560,10 +566,10 @@ fn test_encore_expires_at_2_turns() {
     state.use_last_used_move = true;
     state.side_one.get_active().speed = 200;
     state.side_two.get_active().speed = 100;
-    state.side_two.volatile_status_durations.encore = 2;
+    state.side_two.get_active().volatile_status_durations.encore = 2;
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::ENCORE);
     state
         .side_one
@@ -577,13 +583,13 @@ fn test_encore_expires_at_2_turns() {
         .side_two
         .get_active()
         .replace_move(PokemonMoveIndex::M1, Choices::SWORDSDANCE);
-    state.side_two.last_used_move = LastUsedMove::Move(PokemonMoveIndex::M1);
+    state.side_two.get_active().last_used_move = LastUsedMove::Move(PokemonMoveIndex::M1);
 
     // side_two will try to use tackle, but will encored into watergun from last turn
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -617,10 +623,10 @@ fn test_encore_counter_increment() {
     state.use_last_used_move = true;
     state.side_one.get_active().speed = 200;
     state.side_two.get_active().speed = 100;
-    state.side_two.volatile_status_durations.encore = 1;
+    state.side_two.get_active().volatile_status_durations.encore = 1;
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::ENCORE);
     state
         .side_one
@@ -634,13 +640,13 @@ fn test_encore_counter_increment() {
         .side_two
         .get_active()
         .replace_move(PokemonMoveIndex::M1, Choices::SWORDSDANCE);
-    state.side_two.last_used_move = LastUsedMove::Move(PokemonMoveIndex::M1);
+    state.side_two.get_active().last_used_move = LastUsedMove::Move(PokemonMoveIndex::M1);
 
     // side_two will try to use tackle, but will encored into watergun from last turn
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -678,12 +684,12 @@ fn test_fakeout_first_turn_switched_in() {
         .get_active()
         .replace_move(PokemonMoveIndex::M0, Choices::TACKLE);
 
-    state.side_one.last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
+    state.side_one.get_active().last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -728,12 +734,12 @@ fn test_fakeout_with_last_used_move_of_non_switch() {
         .get_active()
         .replace_move(PokemonMoveIndex::M0, Choices::TACKLE);
 
-    state.side_one.last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
+    state.side_one.get_active().last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -769,12 +775,12 @@ fn test_firstimpression_first_turn_switched_in() {
         .get_active()
         .replace_move(PokemonMoveIndex::M0, Choices::TACKLE);
 
-    state.side_one.last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
+    state.side_one.get_active().last_used_move = LastUsedMove::Switch(PokemonIndex::P0);
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -819,12 +825,12 @@ fn test_firstimpression_with_last_used_move_of_non_switch() {
         .get_active()
         .replace_move(PokemonMoveIndex::M0, Choices::TACKLE);
 
-    state.side_one.last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
+    state.side_one.get_active().last_used_move = LastUsedMove::Move(PokemonMoveIndex::M0);
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 

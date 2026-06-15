@@ -102,13 +102,13 @@ fn burn_modifier(
 
 fn volatile_status_modifier(defending_side: &Side, choice: &Choice) -> f32 {
     if defending_side
-        .volatile_statuses
+        .get_active_immutable().volatile_statuses
         .contains(&PokemonVolatileStatus::REFLECT)
         && choice.category == MoveCategory::Physical
     {
         0.5
     } else if defending_side
-        .volatile_statuses
+        .get_active_immutable().volatile_statuses
         .contains(&PokemonVolatileStatus::LIGHTSCREEN)
         && choice.category == MoveCategory::Special
     {
@@ -159,10 +159,10 @@ pub fn calculate_damage(
         return None;
     } else if choice.base_power == 0.0
         || defending_side
-            .volatile_statuses
+            .get_active_immutable().volatile_statuses
             .contains(&PokemonVolatileStatus::FLY)
         || defending_side
-            .volatile_statuses
+            .get_active_immutable().volatile_statuses
             .contains(&PokemonVolatileStatus::DIG)
     {
         return Some((0, 0));
@@ -197,7 +197,7 @@ pub fn calculate_damage(
         choice,
     );
     if !attacking_side
-        .volatile_statuses
+        .get_active_immutable().volatile_statuses
         .contains(&PokemonVolatileStatus::GEN1BURNNULLIFY)
     {
         damage *= burn_modifier(&choice.category, &attacker.status);

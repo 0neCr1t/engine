@@ -1,6 +1,5 @@
+use crate::decision::{self, SideChoice};
 use crate::engine::evaluate::evaluate;
-use crate::engine::generate_instructions::generate_instructions_from_move_pair;
-use crate::engine::state::MoveChoice;
 use crate::state::State;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -8,14 +7,23 @@ use std::thread;
 use std::time::Duration;
 
 enum IterativeDeependingThreadMessage {
-    Stop((Vec<MoveChoice>, Vec<MoveChoice>, Vec<f32>, i8)),
+    Stop((Vec<SideChoice>, Vec<SideChoice>, Vec<f32>, i8)),
 }
 
+/// Expectiminimax over the `side_one_options` × `side_two_options` payoff matrix.
+///
+/// The matrix is `num_s1_moves × num_s2_moves` entries, evaluated at every node.
+/// In singles each side has a handful of [`SideChoice`]s, so the matrix is small.
+/// In doubles a [`SideChoice`] is a *combined* per-slot action, so each side's
+/// option count is the cartesian product of its slots (commonly hundreds), making
+/// the per-node matrix hundreds × hundreds and the tree cost explode with depth.
+/// For that reason MCTS is the recommended doubles engine; expectiminimax in
+/// doubles should be run only at very shallow depth (see the CLI default).
 pub fn expectiminimax_search(
     state: &mut State,
     mut depth: i8,
-    side_one_options: Vec<MoveChoice>,
-    side_two_options: Vec<MoveChoice>,
+    side_one_options: Vec<SideChoice>,
+    side_two_options: Vec<SideChoice>,
     ab_prune: bool,
     mtx: &Arc<Mutex<bool>>,
 ) -> Vec<f32> {
@@ -53,7 +61,7 @@ pub fn expectiminimax_search(
 
             let mut score = 0.0;
             let instructions =
-                generate_instructions_from_move_pair(state, &side_one_move, &side_two_move, false);
+                decision::generate_instructions(state, &side_one_move, &side_two_move, false);
             if depth == 0 {
                 for instruction in instructions.iter() {
                     state.apply_instructions(&instruction.instruction_list);
@@ -64,7 +72,7 @@ pub fn expectiminimax_search(
                 for instruction in instructions.iter() {
                     state.apply_instructions(&instruction.instruction_list);
                     let (next_turn_side_one_options, next_turn_side_two_options) =
-                        state.get_all_options();
+                        decision::get_all_options(state);
 
                     let next_turn_side_one_options_len = next_turn_side_one_options.len();
                     let next_turn_side_two_options_len = next_turn_side_two_options.len();
@@ -132,12 +140,12 @@ pub fn pick_safest(
 
 fn re_order_moves_for_iterative_deepening(
     last_search_result: &Vec<f32>,
-    side_one_options: Vec<MoveChoice>,
-    side_two_options: Vec<MoveChoice>,
-) -> (Vec<MoveChoice>, Vec<MoveChoice>) {
+    side_one_options: Vec<SideChoice>,
+    side_two_options: Vec<SideChoice>,
+) -> (Vec<SideChoice>, Vec<SideChoice>) {
     let num_s1_moves = side_one_options.len();
     let num_s2_moves = side_two_options.len();
-    let mut worst_case_s1_scores: Vec<(MoveChoice, f32)> = vec![];
+    let mut worst_case_s1_scores: Vec<(SideChoice, f32)> = vec![];
     let mut vec_index = 0;
 
     for s1_index in 0..num_s1_moves {
@@ -160,10 +168,10 @@ fn re_order_moves_for_iterative_deepening(
 
 pub fn iterative_deepen_expectiminimax(
     state: &mut State,
-    side_one_options: Vec<MoveChoice>,
-    side_two_options: Vec<MoveChoice>,
+    side_one_options: Vec<SideChoice>,
+    side_two_options: Vec<SideChoice>,
     max_time: Duration,
-) -> (Vec<MoveChoice>, Vec<MoveChoice>, Vec<f32>, i8) {
+) -> (Vec<SideChoice>, Vec<SideChoice>, Vec<f32>, i8) {
     let mut state_clone = state.clone();
 
     let mut result = expectiminimax_search(

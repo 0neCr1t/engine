@@ -36,6 +36,10 @@ gen8 = []
 gen9 = []
 terastallization = ["gen9"]
 
+# Enables doubles battles (2 active Pokemon per side).
+# Does not imply any generation; it is combined with gen4..gen9.
+doubles = []
+
 default = []
 
 [workspace]

@@ -1,3 +1,21 @@
+"""Python bindings for poke-engine.
+
+The compiled module is generation-specific and may optionally be a *doubles*
+build (2 active Pokemon per side). The Python API is identical between singles
+and doubles builds; the only differences are:
+
+* ``Side.active_indices`` is a list with one entry per active slot — length 1 in
+  a singles build, length 2 in a doubles build.
+* Per-active battle state (boosts, volatile statuses, substitute health,
+  ``last_used_move``, ``damage_dealt``) lives on each :class:`Pokemon`, so in
+  doubles each of the two actives carries its own.
+* A side's turn decision (the ``move_choice`` strings returned by the searches
+  and the move arguments to :func:`generate_instructions`) is a single move in
+  singles, but a combined per-slot action in doubles: the per-slot sub-actions
+  joined with ``;``, each optionally suffixed with ``,<slot>`` to pick which
+  opposing slot it targets — e.g. ``"closecombat,1;protect"``.
+"""
+
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -92,7 +110,9 @@ class MctsSideResult:
     """
     Result of a Monte Carlo Tree Search for a single side
 
-    :param move_choice: The move that was chosen
+    :param move_choice: The move that was chosen. In a doubles build this is the
+        combined per-slot action, with the per-slot sub-actions joined by ``;``
+        (e.g. ``"watergun;switch bulbasaur"``).
     :type move_choice: str
     :param total_score: The total score of the chosen move
     :type total_score: float

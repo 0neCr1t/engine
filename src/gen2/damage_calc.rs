@@ -134,10 +134,10 @@ fn burn_modifier(
 
 fn volatile_status_modifier(defending_side: &Side) -> f32 {
     if defending_side
-        .volatile_statuses
+        .get_active_immutable().volatile_statuses
         .contains(&PokemonVolatileStatus::DIG)
         || defending_side
-            .volatile_statuses
+            .get_active_immutable().volatile_statuses
             .contains(&PokemonVolatileStatus::FLY)
     {
         0.0
@@ -202,7 +202,7 @@ pub fn calculate_damage(
             attacking_side.calculate_boosted_stat(PokemonBoostableStat::Attack);
         boosted_defending_stat =
             defending_side.calculate_boosted_stat(PokemonBoostableStat::Defense);
-        if defending_side.defense_boost >= attacking_side.attack_boost {
+        if defending_side.get_active_immutable().defense_boost >= attacking_side.get_active_immutable().attack_boost {
             gen2_crit_ignore_effects = true;
             crit_attacking_stat = boosted_attacking_stat;
             crit_defending_stat = boosted_defending_stat;
@@ -215,7 +215,7 @@ pub fn calculate_damage(
             attacking_side.calculate_boosted_stat(PokemonBoostableStat::SpecialAttack);
         boosted_defending_stat =
             defending_side.calculate_boosted_stat(PokemonBoostableStat::SpecialDefense);
-        if defending_side.special_defense_boost >= attacking_side.special_attack_boost {
+        if defending_side.get_active_immutable().special_defense_boost >= attacking_side.get_active_immutable().special_attack_boost {
             gen2_crit_ignore_effects = true;
             crit_attacking_stat = boosted_attacking_stat;
             crit_defending_stat = boosted_defending_stat;

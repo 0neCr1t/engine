@@ -458,30 +458,25 @@ fn protosynthesus_or_quarkdrive_on_switch_in(
         instructions
             .instruction_list
             .push(Instruction::ApplyVolatileStatus(
-                ApplyVolatileStatusInstruction {
-                    side_ref: *side_ref,
-                    volatile_status: volatile,
-                },
+                ApplyVolatileStatusInstruction::new(*side_ref, 0, volatile), // FIXME(doubles): slot (no state access in this helper)
             ));
-        attacking_side.volatile_statuses.insert(volatile);
+        attacking_side.get_active().volatile_statuses.insert(volatile);
     } else if active_pkmn.item == Items::BOOSTERENERGY {
         instructions
             .instruction_list
-            .push(Instruction::ChangeItem(ChangeItemInstruction {
-                side_ref: *side_ref,
-                current_item: Items::BOOSTERENERGY,
-                new_item: Items::NONE,
-            }));
+            .push(Instruction::ChangeItem(ChangeItemInstruction::new(
+                *side_ref,
+                0, // FIXME(doubles): slot (no state access in this helper)
+                Items::BOOSTERENERGY,
+                Items::NONE,
+            )));
         instructions
             .instruction_list
             .push(Instruction::ApplyVolatileStatus(
-                ApplyVolatileStatusInstruction {
-                    side_ref: *side_ref,
-                    volatile_status: volatile,
-                },
+                ApplyVolatileStatusInstruction::new(*side_ref, 0, volatile), // FIXME(doubles): slot (no state access in this helper)
             ));
         active_pkmn.item = Items::NONE;
-        attacking_side.volatile_statuses.insert(volatile);
+        attacking_side.get_active().volatile_statuses.insert(volatile);
     }
 }
 
@@ -513,6 +508,8 @@ pub fn ability_before_move(
     side_ref: &SideReference,
     instructions: &mut StateInstructions,
 ) {
+    let owner_slot = state.actor_slot();
+    let def_pos = state.defender_position(side_ref);
     let (attacking_side, defending_side) = state.get_both_sides(side_ref);
     let active_pkmn = attacking_side.get_active();
     let defending_pkmn = defending_side.get_active();
@@ -531,10 +528,11 @@ pub fn ability_before_move(
                 // due to some bad choices I made I cannot just set base_power to 0
                 choice.category = MoveCategory::Status;
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: side_ref.get_other_side(),
-                        name_change: PokemonName::EISCUENOICE as i16 - defending_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        def_pos.side,
+                        def_pos.slot,
+                        PokemonName::EISCUENOICE as i16 - defending_pkmn.id as i16,
+                    ),
                 ));
                 defending_pkmn.id = PokemonName::EISCUENOICE;
                 defending_pkmn.recalculate_stats(&side_ref.get_other_side(), instructions);
@@ -552,10 +550,11 @@ pub fn ability_before_move(
             choice.base_power = 0.0;
             instructions
                 .instruction_list
-                .push(Instruction::FormeChange(FormeChangeInstruction {
-                    side_ref: side_ref.get_other_side(),
-                    name_change: PokemonName::MIMIKYUBUSTED as i16 - defending_pkmn.id as i16,
-                }));
+                .push(Instruction::FormeChange(FormeChangeInstruction::new(
+                    def_pos.side,
+                    def_pos.slot,
+                    PokemonName::MIMIKYUBUSTED as i16 - defending_pkmn.id as i16,
+                )));
             defending_pkmn.id = PokemonName::MIMIKYUBUSTED;
         }
         #[cfg(any(feature = "gen8", feature = "gen9"))]
@@ -568,18 +567,20 @@ pub fn ability_before_move(
             choice.base_power = 0.0;
             instructions
                 .instruction_list
-                .push(Instruction::FormeChange(FormeChangeInstruction {
-                    side_ref: side_ref.get_other_side(),
-                    name_change: PokemonName::MIMIKYUBUSTED as i16 - defending_pkmn.id as i16,
-                }));
+                .push(Instruction::FormeChange(FormeChangeInstruction::new(
+                    def_pos.side,
+                    def_pos.slot,
+                    PokemonName::MIMIKYUBUSTED as i16 - defending_pkmn.id as i16,
+                )));
             defending_pkmn.id = PokemonName::MIMIKYUBUSTED;
             let dmg = cmp::min(defending_pkmn.hp, defending_pkmn.maxhp / 8);
             instructions
                 .instruction_list
-                .push(Instruction::Damage(DamageInstruction {
-                    side_ref: side_ref.get_other_side(),
-                    damage_amount: dmg,
-                }));
+                .push(Instruction::Damage(DamageInstruction::new(
+                    def_pos.side,
+                    def_pos.slot,
+                    dmg,
+                )));
             defending_pkmn.hp -= dmg;
         }
         _ => {}
@@ -595,10 +596,11 @@ pub fn ability_before_move(
                     PokemonName::CRAMORANTGORGING
                 };
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: *side_ref,
-                        name_change: new_forme as i16 - active_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        new_forme as i16 - active_pkmn.id as i16,
+                    ),
                 ));
                 active_pkmn.id = new_forme;
             }
@@ -606,30 +608,32 @@ pub fn ability_before_move(
         #[cfg(feature = "gen9")]
         Abilities::PROTEAN | Abilities::LIBERO => {
             if !attacking_side
-                .volatile_statuses
+                .get_active().volatile_statuses
                 .contains(&PokemonVolatileStatus::TYPECHANGE)
             {
                 let active_pkmn = attacking_side.get_active();
                 if !active_pkmn.has_type(&choice.move_type) && !active_pkmn.terastallized {
                     instructions
                         .instruction_list
-                        .push(Instruction::ChangeType(ChangeType {
-                            side_ref: *side_ref,
-                            new_types: (choice.move_type, PokemonType::TYPELESS),
-                            old_types: active_pkmn.types,
-                        }));
+                        .push(Instruction::ChangeType(ChangeType::new(
+                            *side_ref,
+                            owner_slot,
+                            (choice.move_type, PokemonType::TYPELESS),
+                            active_pkmn.types,
+                        )));
                     active_pkmn.types = (choice.move_type, PokemonType::TYPELESS);
 
                     instructions
                         .instruction_list
                         .push(Instruction::ApplyVolatileStatus(
-                            ApplyVolatileStatusInstruction {
-                                side_ref: *side_ref,
-                                volatile_status: PokemonVolatileStatus::TYPECHANGE,
-                            },
+                            ApplyVolatileStatusInstruction::new(
+                                *side_ref,
+                                owner_slot,
+                                PokemonVolatileStatus::TYPECHANGE,
+                            ),
                         ));
                     attacking_side
-                        .volatile_statuses
+                        .get_active().volatile_statuses
                         .insert(PokemonVolatileStatus::TYPECHANGE);
                 }
             }
@@ -639,26 +643,28 @@ pub fn ability_before_move(
             if !active_pkmn.has_type(&choice.move_type) && !active_pkmn.terastallized {
                 instructions
                     .instruction_list
-                    .push(Instruction::ChangeType(ChangeType {
-                        side_ref: *side_ref,
-                        new_types: (choice.move_type, PokemonType::TYPELESS),
-                        old_types: active_pkmn.types,
-                    }));
+                    .push(Instruction::ChangeType(ChangeType::new(
+                        *side_ref,
+                        owner_slot,
+                        (choice.move_type, PokemonType::TYPELESS),
+                        active_pkmn.types,
+                    )));
                 active_pkmn.types = (choice.move_type, PokemonType::TYPELESS);
                 if !attacking_side
-                    .volatile_statuses
+                    .get_active().volatile_statuses
                     .contains(&PokemonVolatileStatus::TYPECHANGE)
                 {
                     instructions
                         .instruction_list
                         .push(Instruction::ApplyVolatileStatus(
-                            ApplyVolatileStatusInstruction {
-                                side_ref: *side_ref,
-                                volatile_status: PokemonVolatileStatus::TYPECHANGE,
-                            },
+                            ApplyVolatileStatusInstruction::new(
+                                *side_ref,
+                                owner_slot,
+                                PokemonVolatileStatus::TYPECHANGE,
+                            ),
                         ));
                     attacking_side
-                        .volatile_statuses
+                        .get_active().volatile_statuses
                         .insert(PokemonVolatileStatus::TYPECHANGE);
                 }
             }
@@ -681,6 +687,8 @@ pub fn ability_after_damage_hit(
     damage_dealt: i16,
     instructions: &mut StateInstructions,
 ) {
+    let owner_slot = state.actor_slot();
+    let def_pos = state.defender_position(side_ref);
     let (attacking_side, defending_side) = state.get_both_sides(side_ref);
     let active_pkmn = attacking_side.get_active();
     if defending_side.get_active_immutable().ability == Abilities::NEUTRALIZINGGAS
@@ -693,6 +701,7 @@ pub fn ability_after_damage_hit(
             if damage_dealt > 0 && defending_side.get_active_immutable().hp == 0 {
                 apply_boost_instruction(
                     attacking_side,
+                    owner_slot,
                     &PokemonBoostableStat::Attack,
                     &1,
                     side_ref,
@@ -701,6 +710,7 @@ pub fn ability_after_damage_hit(
                 );
                 apply_boost_instruction(
                     attacking_side,
+                    owner_slot,
                     &PokemonBoostableStat::SpecialAttack,
                     &1,
                     side_ref,
@@ -709,6 +719,7 @@ pub fn ability_after_damage_hit(
                 );
                 apply_boost_instruction(
                     attacking_side,
+                    owner_slot,
                     &PokemonBoostableStat::Speed,
                     &1,
                     side_ref,
@@ -724,19 +735,21 @@ pub fn ability_after_damage_hit(
                 && active_pkmn.item == Items::NONE
             {
                 instructions.instruction_list.push(Instruction::ChangeItem(
-                    ChangeItemInstruction {
-                        side_ref: *side_ref,
-                        current_item: active_pkmn.item,
-                        new_item: defending_pkmn.item,
-                    },
+                    ChangeItemInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        active_pkmn.item,
+                        defending_pkmn.item,
+                    ),
                 ));
                 active_pkmn.item = defending_pkmn.item;
                 instructions.instruction_list.push(Instruction::ChangeItem(
-                    ChangeItemInstruction {
-                        side_ref: side_ref.get_other_side(),
-                        current_item: defending_pkmn.item,
-                        new_item: Items::NONE,
-                    },
+                    ChangeItemInstruction::new(
+                        def_pos.side,
+                        def_pos.slot,
+                        defending_pkmn.item,
+                        Items::NONE,
+                    ),
                 ));
                 defending_pkmn.item = Items::NONE;
             }
@@ -745,6 +758,7 @@ pub fn ability_after_damage_hit(
             if damage_dealt > 0 && defending_side.get_active_immutable().hp == 0 {
                 apply_boost_instruction(
                     attacking_side,
+                    owner_slot,
                     &PokemonBoostableStat::Attack,
                     &1,
                     side_ref,
@@ -757,6 +771,7 @@ pub fn ability_after_damage_hit(
             if damage_dealt > 0 && defending_side.get_active_immutable().hp == 0 {
                 apply_boost_instruction(
                     attacking_side,
+                    owner_slot,
                     &PokemonBoostableStat::SpecialAttack,
                     &1,
                     side_ref,
@@ -770,6 +785,7 @@ pub fn ability_after_damage_hit(
                 let highest_stat = &attacking_side.calculate_highest_stat();
                 apply_boost_instruction(
                     attacking_side,
+                    owner_slot,
                     highest_stat,
                     &1,
                     side_ref,
@@ -788,10 +804,11 @@ pub fn ability_after_damage_hit(
             if choice.flags.contact {
                 instructions
                     .instruction_list
-                    .push(Instruction::ChangeAbility(ChangeAbilityInstruction {
-                        side_ref: *side_ref,
-                        ability_change: Abilities::MUMMY as i16 - attacking_pkmn.ability as i16,
-                    }));
+                    .push(Instruction::ChangeAbility(ChangeAbilityInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        Abilities::MUMMY as i16 - attacking_pkmn.ability as i16,
+                    )));
                 attacking_pkmn.ability = Abilities::MUMMY;
             }
         }
@@ -801,25 +818,28 @@ pub fn ability_after_damage_hit(
                     .contains(&defending_pkmn.id)
             {
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: side_ref.get_other_side(),
-                        name_change: PokemonName::CRAMORANT as i16 - defending_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        def_pos.side,
+                        def_pos.slot,
+                        PokemonName::CRAMORANT as i16 - defending_pkmn.id as i16,
+                    ),
                 ));
 
                 let damage_dealt = cmp::min(attacking_pkmn.maxhp / 4, attacking_pkmn.hp);
                 instructions
                     .instruction_list
-                    .push(Instruction::Damage(DamageInstruction {
-                        side_ref: *side_ref,
-                        damage_amount: damage_dealt,
-                    }));
+                    .push(Instruction::Damage(DamageInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        damage_dealt,
+                    )));
                 attacking_pkmn.hp -= damage_dealt;
 
                 if defending_pkmn.id == PokemonName::CRAMORANTGULPING {
                     defending_pkmn.id = PokemonName::CRAMORANT;
                     apply_boost_instruction(
                         attacking_side,
+                        owner_slot,
                         &PokemonBoostableStat::Defense,
                         &-1,
                         &side_ref.get_other_side(),
@@ -841,11 +861,12 @@ pub fn ability_after_damage_hit(
                 && defending_pkmn.hp != 0
                 && !defending_pkmn.has_type(&choice.move_type)
             {
-                let change_type_instruction = Instruction::ChangeType(ChangeType {
-                    side_ref: side_ref.get_other_side(),
-                    new_types: (choice.move_type, PokemonType::TYPELESS),
-                    old_types: defending_pkmn.types,
-                });
+                let change_type_instruction = Instruction::ChangeType(ChangeType::new(
+                    def_pos.side,
+                    def_pos.slot,
+                    (choice.move_type, PokemonType::TYPELESS),
+                    defending_pkmn.types,
+                ));
                 defending_pkmn.types = (choice.move_type, PokemonType::TYPELESS);
                 instructions.instruction_list.push(change_type_instruction);
             }
@@ -854,6 +875,7 @@ pub fn ability_after_damage_hit(
             if damage_dealt > 0 && defending_pkmn.hp != 0 {
                 apply_boost_instruction(
                     defending_side,
+                    def_pos.slot,
                     &PokemonBoostableStat::Defense,
                     &1,
                     side_ref,
@@ -866,6 +888,7 @@ pub fn ability_after_damage_hit(
             if damage_dealt > 0 {
                 apply_boost_instruction(
                     attacking_side,
+                    owner_slot,
                     &PokemonBoostableStat::Speed,
                     &-1,
                     &side_ref.get_other_side(),
@@ -927,6 +950,7 @@ pub fn ability_after_damage_hit(
             {
                 apply_boost_instruction(
                     defending_side,
+                    def_pos.slot,
                     &PokemonBoostableStat::SpecialAttack,
                     &1,
                     &side_ref.get_other_side(),
@@ -945,10 +969,11 @@ pub fn ability_after_damage_hit(
 
                 instructions
                     .instruction_list
-                    .push(Instruction::Damage(DamageInstruction {
-                        side_ref: *side_ref,
-                        damage_amount: damage_dealt,
-                    }));
+                    .push(Instruction::Damage(DamageInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        damage_dealt,
+                    )));
                 attacking_pkmn.hp -= damage_dealt;
             }
         }
@@ -960,10 +985,11 @@ pub fn ability_after_damage_hit(
                 let damage_dealt = cmp::min(attacking_pkmn.maxhp / 4, attacking_pkmn.hp);
                 instructions
                     .instruction_list
-                    .push(Instruction::Damage(DamageInstruction {
-                        side_ref: *side_ref,
-                        damage_amount: damage_dealt,
-                    }));
+                    .push(Instruction::Damage(DamageInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        damage_dealt,
+                    )));
                 attacking_pkmn.hp -= damage_dealt;
             }
         }
@@ -972,10 +998,11 @@ pub fn ability_after_damage_hit(
                 let damage_dealt = cmp::min(damage_dealt, attacking_pkmn.hp);
                 instructions
                     .instruction_list
-                    .push(Instruction::Damage(DamageInstruction {
-                        side_ref: *side_ref,
-                        damage_amount: damage_dealt,
-                    }));
+                    .push(Instruction::Damage(DamageInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        damage_dealt,
+                    )));
                 attacking_pkmn.hp -= damage_dealt;
             }
         }
@@ -987,27 +1014,28 @@ pub fn ability_after_damage_hit(
                     if pkmn.hp != 0
                         && pkmn.ability != Abilities::SOUNDPROOF
                         && !(side
-                            .volatile_statuses
+                            .get_active().volatile_statuses
                             .contains(&PokemonVolatileStatus::PERISH4)
                             || side
-                                .volatile_statuses
+                                .get_active().volatile_statuses
                                 .contains(&PokemonVolatileStatus::PERISH3)
                             || side
-                                .volatile_statuses
+                                .get_active().volatile_statuses
                                 .contains(&PokemonVolatileStatus::PERISH2)
                             || side
-                                .volatile_statuses
+                                .get_active().volatile_statuses
                                 .contains(&PokemonVolatileStatus::PERISH1))
                     {
                         instructions
                             .instruction_list
                             .push(Instruction::ApplyVolatileStatus(
-                                ApplyVolatileStatusInstruction {
-                                    side_ref: side_ref,
-                                    volatile_status: PokemonVolatileStatus::PERISH4,
-                                },
+                                ApplyVolatileStatusInstruction::new(
+                                    side_ref,
+                                    0, // FIXME(doubles): slot (iterates both sides' actives)
+                                    PokemonVolatileStatus::PERISH4,
+                                ),
                             ));
-                        side.volatile_statuses
+                        side.get_active().volatile_statuses
                             .insert(PokemonVolatileStatus::PERISH4);
                     }
                 }
@@ -1022,6 +1050,7 @@ pub fn ability_on_switch_out(
     side_ref: &SideReference,
     instructions: &mut StateInstructions,
 ) {
+    let owner_slot = state.actor_slot();
     let (attacking_side, defending_side) = state.get_both_sides(side_ref);
     let active_pkmn = attacking_side.get_active();
     if defending_side.get_active_immutable().ability == Abilities::NEUTRALIZINGGAS {
@@ -1031,10 +1060,11 @@ pub fn ability_on_switch_out(
         Abilities::GULPMISSILE if active_pkmn.base_ability == Abilities::GULPMISSILE => {
             if active_pkmn.id != PokemonName::CRAMORANT {
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: *side_ref,
-                        name_change: PokemonName::CRAMORANT as i16 - active_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        PokemonName::CRAMORANT as i16 - active_pkmn.id as i16,
+                    ),
                 ));
                 active_pkmn.id = PokemonName::CRAMORANT;
             }
@@ -1042,10 +1072,11 @@ pub fn ability_on_switch_out(
         Abilities::ZEROTOHERO => {
             if active_pkmn.id == PokemonName::PALAFIN {
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: *side_ref,
-                        name_change: PokemonName::PALAFINHERO as i16 - active_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        PokemonName::PALAFINHERO as i16 - active_pkmn.id as i16,
+                    ),
                 ));
                 active_pkmn.id = PokemonName::PALAFINHERO;
                 active_pkmn.recalculate_stats(side_ref, instructions);
@@ -1054,10 +1085,11 @@ pub fn ability_on_switch_out(
         Abilities::HUNGERSWITCH => {
             if active_pkmn.id == PokemonName::MORPEKOHANGRY && !active_pkmn.terastallized {
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: *side_ref,
-                        name_change: PokemonName::MORPEKO as i16 - active_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        PokemonName::MORPEKO as i16 - active_pkmn.id as i16,
+                    ),
                 ));
                 active_pkmn.id = PokemonName::MORPEKO;
             }
@@ -1070,7 +1102,7 @@ pub fn ability_on_switch_out(
                     .instruction_list
                     .push(Instruction::ChangeStatus(ChangeStatusInstruction {
                         side_ref: *side_ref,
-                        pokemon_index: attacking_side.active_index,
+                        pokemon_index: attacking_side.active_indices[0],
                         old_status: status,
                         new_status: PokemonStatus::NONE,
                     }));
@@ -1082,10 +1114,11 @@ pub fn ability_on_switch_out(
             if hp_recovered > 0 && active_pkmn.hp > 0 {
                 instructions
                     .instruction_list
-                    .push(Instruction::Heal(HealInstruction {
-                        side_ref: *side_ref,
-                        heal_amount: hp_recovered,
-                    }));
+                    .push(Instruction::Heal(HealInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        hp_recovered,
+                    )));
                 active_pkmn.hp += hp_recovered;
             }
         }
@@ -1125,10 +1158,11 @@ pub fn ability_on_switch_out(
     if active_pkmn.ability != active_pkmn.base_ability {
         instructions
             .instruction_list
-            .push(Instruction::ChangeAbility(ChangeAbilityInstruction {
-                side_ref: *side_ref,
-                ability_change: active_pkmn.base_ability as i16 - active_pkmn.ability as i16,
-            }));
+            .push(Instruction::ChangeAbility(ChangeAbilityInstruction::new(
+                *side_ref,
+                owner_slot,
+                active_pkmn.base_ability as i16 - active_pkmn.ability as i16,
+            )));
         active_pkmn.ability = active_pkmn.base_ability;
     }
 }
@@ -1138,6 +1172,8 @@ pub fn ability_end_of_turn(
     side_ref: &SideReference,
     instructions: &mut StateInstructions,
 ) {
+    let owner_slot = state.actor_slot();
+    let def_pos = state.defender_position(side_ref);
     let (attacking_side, defending_side) = state.get_both_sides(side_ref);
     let active_pkmn = attacking_side.get_active();
     if defending_side.get_active_immutable().ability == Abilities::NEUTRALIZINGGAS {
@@ -1147,18 +1183,20 @@ pub fn ability_end_of_turn(
         Abilities::HUNGERSWITCH => {
             if active_pkmn.id == PokemonName::MORPEKO && !active_pkmn.terastallized {
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: *side_ref,
-                        name_change: PokemonName::MORPEKOHANGRY as i16 - active_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        PokemonName::MORPEKOHANGRY as i16 - active_pkmn.id as i16,
+                    ),
                 ));
                 active_pkmn.id = PokemonName::MORPEKOHANGRY;
             } else if active_pkmn.id == PokemonName::MORPEKOHANGRY && !active_pkmn.terastallized {
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: *side_ref,
-                        name_change: PokemonName::MORPEKO as i16 - active_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        PokemonName::MORPEKO as i16 - active_pkmn.id as i16,
+                    ),
                 ));
                 active_pkmn.id = PokemonName::MORPEKO;
             }
@@ -1168,10 +1206,11 @@ pub fn ability_end_of_turn(
                 && active_pkmn.id == PokemonName::MINIORMETEOR
             {
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: *side_ref,
-                        name_change: PokemonName::MINIOR as i16 - active_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        PokemonName::MINIOR as i16 - active_pkmn.id as i16,
+                    ),
                 ));
                 active_pkmn.id = PokemonName::MINIOR;
                 active_pkmn.recalculate_stats(side_ref, instructions);
@@ -1179,10 +1218,11 @@ pub fn ability_end_of_turn(
             if active_pkmn.hp > active_pkmn.maxhp / 2 && active_pkmn.id != PokemonName::MINIORMETEOR
             {
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: *side_ref,
-                        name_change: PokemonName::MINIORMETEOR as i16 - active_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        PokemonName::MINIORMETEOR as i16 - active_pkmn.id as i16,
+                    ),
                 ));
                 active_pkmn.id = PokemonName::MINIORMETEOR;
                 active_pkmn.recalculate_stats(side_ref, instructions);
@@ -1193,20 +1233,22 @@ pub fn ability_end_of_turn(
                 && active_pkmn.id == PokemonName::WISHIWASHISCHOOL
             {
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: *side_ref,
-                        name_change: PokemonName::WISHIWASHI as i16 - active_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        PokemonName::WISHIWASHI as i16 - active_pkmn.id as i16,
+                    ),
                 ));
                 active_pkmn.id = PokemonName::WISHIWASHI;
                 active_pkmn.recalculate_stats(side_ref, instructions);
             }
             if active_pkmn.hp > active_pkmn.maxhp / 4 && active_pkmn.id == PokemonName::WISHIWASHI {
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: *side_ref,
-                        name_change: PokemonName::WISHIWASHISCHOOL as i16 - active_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        PokemonName::WISHIWASHISCHOOL as i16 - active_pkmn.id as i16,
+                    ),
                 ));
                 active_pkmn.id = PokemonName::WISHIWASHISCHOOL;
                 active_pkmn.recalculate_stats(side_ref, instructions);
@@ -1218,10 +1260,11 @@ pub fn ability_end_of_turn(
                 let damage_dealt = cmp::min(defender.maxhp / 8, defender.hp);
                 instructions
                     .instruction_list
-                    .push(Instruction::Damage(DamageInstruction {
-                        side_ref: side_ref.get_other_side(),
-                        damage_amount: damage_dealt,
-                    }));
+                    .push(Instruction::Damage(DamageInstruction::new(
+                        def_pos.side,
+                        def_pos.slot,
+                        damage_dealt,
+                    )));
                 defender.hp -= damage_dealt;
             }
         }
@@ -1234,10 +1277,11 @@ pub fn ability_end_of_turn(
                 if damage_dealt > 0 {
                     instructions
                         .instruction_list
-                        .push(Instruction::Damage(DamageInstruction {
-                            side_ref: *side_ref,
-                            damage_amount: damage_dealt,
-                        }));
+                        .push(Instruction::Damage(DamageInstruction::new(
+                            *side_ref,
+                            owner_slot,
+                            damage_dealt,
+                        )));
                     active_pkmn.hp -= damage_dealt;
                 }
             }
@@ -1250,10 +1294,11 @@ pub fn ability_end_of_turn(
                 if health_recovered > 0 {
                     instructions
                         .instruction_list
-                        .push(Instruction::Heal(HealInstruction {
-                            side_ref: *side_ref,
-                            heal_amount: health_recovered,
-                        }));
+                        .push(Instruction::Heal(HealInstruction::new(
+                            *side_ref,
+                            owner_slot,
+                            health_recovered,
+                        )));
                     active_pkmn.hp += health_recovered;
                 }
             }
@@ -1265,22 +1310,24 @@ pub fn ability_end_of_turn(
             {
                 let heal_amount =
                     cmp::min(active_pkmn.maxhp / 8, active_pkmn.maxhp - active_pkmn.hp);
-                let ins = Instruction::Heal(HealInstruction {
-                    side_ref: side_ref.clone(),
-                    heal_amount: heal_amount,
-                });
+                let ins = Instruction::Heal(HealInstruction::new(
+                    side_ref.clone(),
+                    owner_slot,
+                    heal_amount,
+                ));
                 active_pkmn.hp += heal_amount;
                 instructions.instruction_list.push(ins);
             }
         }
         Abilities::SPEEDBOOST => {
-            if attacking_side.speed_boost < 6 {
-                let ins = Instruction::Boost(BoostInstruction {
-                    side_ref: side_ref.clone(),
-                    stat: PokemonBoostableStat::Speed,
-                    amount: 1,
-                });
-                attacking_side.speed_boost += 1;
+            if attacking_side.get_active().speed_boost < 6 {
+                let ins = Instruction::Boost(BoostInstruction::new(
+                    side_ref.clone(),
+                    owner_slot,
+                    PokemonBoostableStat::Speed,
+                    1,
+                ));
+                attacking_side.get_active().speed_boost += 1;
                 instructions.instruction_list.push(ins);
             }
         }
@@ -1294,10 +1341,11 @@ pub fn ability_end_of_turn(
                 if health_recovered > 0 {
                     instructions
                         .instruction_list
-                        .push(Instruction::Heal(HealInstruction {
-                            side_ref: *side_ref,
-                            heal_amount: health_recovered,
-                        }));
+                        .push(Instruction::Heal(HealInstruction::new(
+                            *side_ref,
+                            owner_slot,
+                            health_recovered,
+                        )));
                     active_pkmn.hp += health_recovered;
                 }
             }
@@ -1308,10 +1356,11 @@ pub fn ability_end_of_turn(
                 if active_pkmn.hp < active_pkmn.maxhp {
                     let heal_amount =
                         cmp::min(active_pkmn.maxhp / 8, active_pkmn.maxhp - active_pkmn.hp);
-                    let ins = Instruction::Heal(HealInstruction {
-                        side_ref: side_ref.clone(),
-                        heal_amount: heal_amount,
-                    });
+                    let ins = Instruction::Heal(HealInstruction::new(
+                        side_ref.clone(),
+                        owner_slot,
+                        heal_amount,
+                    ));
                     active_pkmn.hp += heal_amount;
                     instructions.instruction_list.push(ins);
                 }
@@ -1323,7 +1372,7 @@ pub fn ability_end_of_turn(
                     || state.weather_is_active(&Weather::HEAVYRAIN))
             {
                 let attacking_side = state.get_side(side_ref);
-                let active_index = attacking_side.active_index;
+                let active_index = attacking_side.active_indices[0];
                 let active_pkmn = attacking_side.get_active();
 
                 add_remove_status_instructions(
@@ -1339,7 +1388,7 @@ pub fn ability_end_of_turn(
         Abilities::SHEDSKIN => {
             if active_pkmn.status != PokemonStatus::NONE {
                 let attacking_side = state.get_side(side_ref);
-                let active_index = attacking_side.active_index;
+                let active_index = attacking_side.active_indices[0];
                 let active_pkmn = attacking_side.get_active();
 
                 add_remove_status_instructions(
@@ -1359,6 +1408,8 @@ pub fn ability_on_switch_in(
     side_ref: &SideReference,
     instructions: &mut StateInstructions,
 ) {
+    let owner_slot = state.actor_slot();
+    let def_pos = state.defender_position(side_ref);
     let (attacking_side, defending_side) = state.get_both_sides(side_ref);
     let active_pkmn = attacking_side.get_active();
     let defending_pkmn = defending_side.get_active_immutable();
@@ -1371,10 +1422,11 @@ pub fn ability_on_switch_in(
     if active_pkmn.ability == Abilities::TRACE && active_pkmn.ability != defending_pkmn.ability {
         instructions
             .instruction_list
-            .push(Instruction::ChangeAbility(ChangeAbilityInstruction {
-                side_ref: *side_ref,
-                ability_change: defending_pkmn.ability as i16 - active_pkmn.ability as i16,
-            }));
+            .push(Instruction::ChangeAbility(ChangeAbilityInstruction::new(
+                *side_ref,
+                owner_slot,
+                defending_pkmn.ability as i16 - active_pkmn.ability as i16,
+            )));
         active_pkmn.ability = defending_pkmn.ability;
     }
 
@@ -1385,10 +1437,11 @@ pub fn ability_on_switch_in(
             {
                 let active_pkmn = state.get_side(side_ref).get_active();
                 instructions.instruction_list.push(Instruction::FormeChange(
-                    FormeChangeInstruction {
-                        side_ref: *side_ref,
-                        name_change: PokemonName::EISCUE as i16 - active_pkmn.id as i16,
-                    },
+                    FormeChangeInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        PokemonName::EISCUE as i16 - active_pkmn.id as i16,
+                    ),
                 ));
                 active_pkmn.id = PokemonName::EISCUE;
                 active_pkmn.recalculate_stats(side_ref, instructions);
@@ -1421,6 +1474,7 @@ pub fn ability_on_switch_in(
         Abilities::EMBODYASPECTTEAL => {
             apply_boost_instruction(
                 attacking_side,
+                owner_slot,
                 &PokemonBoostableStat::Speed,
                 &1,
                 side_ref,
@@ -1431,6 +1485,7 @@ pub fn ability_on_switch_in(
         Abilities::EMBODYASPECTWELLSPRING => {
             apply_boost_instruction(
                 attacking_side,
+                owner_slot,
                 &PokemonBoostableStat::SpecialDefense,
                 &1,
                 side_ref,
@@ -1441,6 +1496,7 @@ pub fn ability_on_switch_in(
         Abilities::EMBODYASPECTCORNERSTONE => {
             apply_boost_instruction(
                 attacking_side,
+                owner_slot,
                 &PokemonBoostableStat::Defense,
                 &1,
                 side_ref,
@@ -1451,6 +1507,7 @@ pub fn ability_on_switch_in(
         Abilities::EMBODYASPECTHEARTHFLAME => {
             apply_boost_instruction(
                 attacking_side,
+                owner_slot,
                 &PokemonBoostableStat::Attack,
                 &1,
                 side_ref,
@@ -1460,37 +1517,40 @@ pub fn ability_on_switch_in(
         }
         Abilities::INTREPIDSWORD => {
             // no need to check for boost at +6 because we are switching in
-            attacking_side.attack_boost += 1;
+            attacking_side.get_active().attack_boost += 1;
             instructions
                 .instruction_list
-                .push(Instruction::Boost(BoostInstruction {
-                    side_ref: *side_ref,
-                    stat: PokemonBoostableStat::Attack,
-                    amount: 1,
-                }));
+                .push(Instruction::Boost(BoostInstruction::new(
+                    *side_ref,
+                    owner_slot,
+                    PokemonBoostableStat::Attack,
+                    1,
+                )));
         }
         Abilities::SLOWSTART => {
             instructions
                 .instruction_list
                 .push(Instruction::ApplyVolatileStatus(
-                    ApplyVolatileStatusInstruction {
-                        side_ref: *side_ref,
-                        volatile_status: PokemonVolatileStatus::SLOWSTART,
-                    },
+                    ApplyVolatileStatusInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        PokemonVolatileStatus::SLOWSTART,
+                    ),
                 ));
             instructions
                 .instruction_list
                 .push(Instruction::ChangeVolatileStatusDuration(
-                    ChangeVolatileStatusDurationInstruction {
-                        side_ref: *side_ref,
-                        volatile_status: PokemonVolatileStatus::SLOWSTART,
-                        amount: 6 - attacking_side.volatile_status_durations.slowstart,
-                    },
+                    ChangeVolatileStatusDurationInstruction::new(
+                        *side_ref,
+                        owner_slot,
+                        PokemonVolatileStatus::SLOWSTART,
+                        6 - attacking_side.get_active().volatile_status_durations.slowstart,
+                    ),
                 ));
             attacking_side
-                .volatile_statuses
+                .get_active().volatile_statuses
                 .insert(PokemonVolatileStatus::SLOWSTART);
-            attacking_side.volatile_status_durations.slowstart = 6;
+            attacking_side.get_active().volatile_status_durations.slowstart = 6;
         }
         Abilities::DROUGHT | Abilities::ORICHALCUMPULSE => {
             if state.weather.weather_type != Weather::SUN {
@@ -1555,11 +1615,12 @@ pub fn ability_on_switch_in(
                 || defender.ability == Abilities::INNERFOCUS
                 || defender.ability == Abilities::SCRAPPY
                 || defending_side
-                    .volatile_statuses
+                    .get_active().volatile_statuses
                     .contains(&PokemonVolatileStatus::SUBSTITUTE))
             {
                 if apply_boost_instruction(
                     defending_side,
+                    def_pos.slot,
                     &PokemonBoostableStat::Attack,
                     &-1,
                     side_ref,
@@ -1570,6 +1631,7 @@ pub fn ability_on_switch_in(
                     if defender.item == Items::ADRENALINEORB {
                         if apply_boost_instruction(
                             defending_side,
+                            def_pos.slot,
                             &PokemonBoostableStat::Speed,
                             &1,
                             &side_ref.get_other_side(),
@@ -1577,11 +1639,12 @@ pub fn ability_on_switch_in(
                             instructions,
                         ) {
                             let adrenaline_orb_item_instruction =
-                                Instruction::ChangeItem(ChangeItemInstruction {
-                                    side_ref: side_ref.get_other_side(),
-                                    current_item: Items::ADRENALINEORB,
-                                    new_item: Items::NONE,
-                                });
+                                Instruction::ChangeItem(ChangeItemInstruction::new(
+                                    def_pos.side,
+                                    def_pos.slot,
+                                    Items::ADRENALINEORB,
+                                    Items::NONE,
+                                ));
                             state.apply_one_instruction(&adrenaline_orb_item_instruction);
                             instructions
                                 .instruction_list
@@ -1593,14 +1656,15 @@ pub fn ability_on_switch_in(
         }
         Abilities::DAUNTLESSSHIELD => {
             // no need to check for boost at +6 because we are switching in
-            attacking_side.defense_boost += 1;
+            attacking_side.get_active().defense_boost += 1;
             instructions
                 .instruction_list
-                .push(Instruction::Boost(BoostInstruction {
-                    side_ref: *side_ref,
-                    stat: PokemonBoostableStat::Defense,
-                    amount: 1,
-                }));
+                .push(Instruction::Boost(BoostInstruction::new(
+                    *side_ref,
+                    owner_slot,
+                    PokemonBoostableStat::Defense,
+                    1,
+                )));
         }
         Abilities::GRASSYSURGE => {
             if state.terrain.terrain_type != Terrain::GRASSYTERRAIN {
@@ -1636,6 +1700,7 @@ pub fn ability_on_switch_in(
             {
                 apply_boost_instruction(
                     attacking_side,
+                    owner_slot,
                     &PokemonBoostableStat::Attack,
                     &1,
                     side_ref,
@@ -1645,6 +1710,7 @@ pub fn ability_on_switch_in(
             } else {
                 apply_boost_instruction(
                     attacking_side,
+                    owner_slot,
                     &PokemonBoostableStat::SpecialAttack,
                     &1,
                     side_ref,
@@ -1798,9 +1864,18 @@ pub fn ability_modify_attack_being_used(
     defender_choice: &Choice,
     attacking_side_ref: &SideReference,
 ) {
+    // Doubles: read the acting slot's attacker and the move's actual target slot.
+    // In singles both resolve to 0 (and the opposing slot 0), so behavior is
+    // unchanged.
+    let att_slot = state.actor_slot();
+    let def_slot = if attacker_choice.target.targets_opponent_side() {
+        state.defender_position(attacking_side_ref).slot
+    } else {
+        0
+    };
     let (attacking_side, defending_side) = state.get_both_sides_immutable(attacking_side_ref);
-    let attacking_pkmn = attacking_side.get_active_immutable();
-    if defending_side.get_active_immutable().ability == Abilities::NEUTRALIZINGGAS {
+    let attacking_pkmn = attacking_side.get_active_slot_immutable(att_slot);
+    if defending_side.get_active_slot_immutable(def_slot).ability == Abilities::NEUTRALIZINGGAS {
         return;
     }
     match attacking_pkmn.ability {
@@ -1808,7 +1883,7 @@ pub fn ability_modify_attack_being_used(
         Abilities::PRANKSTER => {
             if attacker_choice.category == MoveCategory::Status
                 && defending_side
-                    .get_active_immutable()
+                    .get_active_slot_immutable(def_slot)
                     .has_type(&PokemonType::DARK)
             {
                 attacker_choice.remove_all_effects();
@@ -1876,7 +1951,7 @@ pub fn ability_modify_attack_being_used(
         Abilities::NEUROFORCE => {
             if type_effectiveness_modifier(
                 &attacker_choice.move_type,
-                &defending_side.get_active_immutable(),
+                &defending_side.get_active_slot_immutable(def_slot),
             ) > 1.0
             {
                 attacker_choice.base_power *= 1.25;
@@ -1935,7 +2010,7 @@ pub fn ability_modify_attack_being_used(
         Abilities::TINTEDLENS => {
             if type_effectiveness_modifier(
                 &attacker_choice.move_type,
-                &defending_side.get_active_immutable(),
+                &defending_side.get_active_slot_immutable(def_slot),
             ) < 1.0
             {
                 attacker_choice.base_power *= 2.0;
@@ -1991,7 +2066,7 @@ pub fn ability_modify_attack_being_used(
         }
         Abilities::FAIRYAURA => {
             if attacker_choice.move_type == PokemonType::FAIRY
-                && defending_side.get_active_immutable().ability != Abilities::AURABREAK
+                && defending_side.get_active_slot_immutable(def_slot).ability != Abilities::AURABREAK
             {
                 attacker_choice.base_power *= 1.33;
             }
@@ -2001,7 +2076,7 @@ pub fn ability_modify_attack_being_used(
         }
         Abilities::DARKAURA => {
             if attacker_choice.move_type == PokemonType::DARK
-                && defending_side.get_active_immutable().ability != Abilities::AURABREAK
+                && defending_side.get_active_slot_immutable(def_slot).ability != Abilities::AURABREAK
             {
                 attacker_choice.base_power *= 1.33;
             }
@@ -2122,6 +2197,11 @@ pub fn ability_modify_attack_being_used(
                 attacker_choice.base_power *= 1.5;
             }
         }
+        // Battery boosts the ALLY's special moves, not the holder's own. In
+        // doubles this is handled correctly by consulting the partner in
+        // `calculate_damage`; the (incorrect) self-boost is kept only for the
+        // singles build to preserve its established behavior.
+        #[cfg(not(feature = "doubles"))]
         Abilities::BATTERY => {
             if attacker_choice.category == MoveCategory::Special {
                 attacker_choice.base_power *= 1.3;
@@ -2170,7 +2250,7 @@ pub fn ability_modify_attack_being_used(
             }
         }
         Abilities::TOXICCHAIN => {
-            if attacker_choice.target == MoveTarget::Opponent {
+            if attacker_choice.target.targets_opponent_side() {
                 attacker_choice.add_or_create_secondaries(Secondary {
                     chance: 30.0,
                     target: MoveTarget::Opponent,
@@ -2216,11 +2296,17 @@ pub fn ability_modify_attack_against(
     defender_choice: &Choice,
     attacking_side_ref: &SideReference,
 ) {
+    let att_slot = state.actor_slot();
+    let def_slot = if attacker_choice.target.targets_opponent_side() {
+        state.defender_position(attacking_side_ref).slot
+    } else {
+        0
+    };
     let (attacking_side, defending_side) = state.get_both_sides_immutable(attacking_side_ref);
-    let attacking_pkmn = attacking_side.get_active_immutable();
-    let target_pkmn = defending_side.get_active_immutable();
+    let attacking_pkmn = attacking_side.get_active_slot_immutable(att_slot);
+    let target_pkmn = defending_side.get_active_slot_immutable(def_slot);
     if target_pkmn.ability == Abilities::NEUTRALIZINGGAS
-        || attacker_choice.target == MoveTarget::User
+        || attacker_choice.target.targets_user_side()
     {
         return;
     }
@@ -2539,7 +2625,7 @@ pub fn ability_modify_attack_against(
         }
         Abilities::LEVITATE => {
             if attacker_choice.move_type == PokemonType::GROUND
-                && attacker_choice.target == MoveTarget::Opponent
+                && attacker_choice.target.targets_opponent_side()
                 && attacker_choice.move_id != Choices::THOUSANDARROWS
             {
                 attacker_choice.base_power = 0.0;
