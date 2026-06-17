@@ -2,7 +2,7 @@ use super::abilities::Abilities;
 use super::items::Items;
 use super::state::PokemonVolatileStatus;
 use crate::choices::MoveCategory;
-use crate::state::{Pokemon, PokemonStatus, Side, State};
+use crate::state::{Pokemon, PokemonStatus, Side, State, ACTIVE_PER_SIDE};
 
 const POKEMON_ALIVE: f32 = 30.0;
 const POKEMON_HP: f32 = 100.0;
@@ -165,8 +165,8 @@ pub fn evaluate(state: &State) -> f32 {
         if pkmn.hp > 0 {
             score += evaluate_pokemon(pkmn);
             score += evaluate_hazards(pkmn, &state.side_one);
-            if iter.pokemon_index == state.side_one.active_indices[0] {
-                for vs in state.side_one.get_active_immutable().volatile_statuses.iter() {
+            if (0..ACTIVE_PER_SIDE).any(|slot| iter.pokemon_index == state.side_one.active_indices[slot]) {
+                for vs in pkmn.volatile_statuses.iter() {
                     match vs {
                         PokemonVolatileStatus::LEECHSEED => score += LEECH_SEED,
                         PokemonVolatileStatus::SUBSTITUTE => score += SUBSTITUTE,
@@ -175,13 +175,13 @@ pub fn evaluate(state: &State) -> f32 {
                     }
                 }
 
-                score += get_boost_multiplier(state.side_one.get_active_immutable().attack_boost) * POKEMON_ATTACK_BOOST;
-                score += get_boost_multiplier(state.side_one.get_active_immutable().defense_boost) * POKEMON_DEFENSE_BOOST;
-                score += get_boost_multiplier(state.side_one.get_active_immutable().special_attack_boost)
+                score += get_boost_multiplier(pkmn.attack_boost) * POKEMON_ATTACK_BOOST;
+                score += get_boost_multiplier(pkmn.defense_boost) * POKEMON_DEFENSE_BOOST;
+                score += get_boost_multiplier(pkmn.special_attack_boost)
                     * POKEMON_SPECIAL_ATTACK_BOOST;
-                score += get_boost_multiplier(state.side_one.get_active_immutable().special_defense_boost)
+                score += get_boost_multiplier(pkmn.special_defense_boost)
                     * POKEMON_SPECIAL_DEFENSE_BOOST;
-                score += get_boost_multiplier(state.side_one.get_active_immutable().speed_boost) * POKEMON_SPEED_BOOST;
+                score += get_boost_multiplier(pkmn.speed_boost) * POKEMON_SPEED_BOOST;
             }
         }
         if pkmn.terastallized {
@@ -198,8 +198,8 @@ pub fn evaluate(state: &State) -> f32 {
             score -= evaluate_pokemon(pkmn);
             score -= evaluate_hazards(pkmn, &state.side_two);
 
-            if iter.pokemon_index == state.side_two.active_indices[0] {
-                for vs in state.side_two.get_active_immutable().volatile_statuses.iter() {
+            if (0..ACTIVE_PER_SIDE).any(|slot| iter.pokemon_index == state.side_two.active_indices[slot]) {
+                for vs in pkmn.volatile_statuses.iter() {
                     match vs {
                         PokemonVolatileStatus::LEECHSEED => score -= LEECH_SEED,
                         PokemonVolatileStatus::SUBSTITUTE => score -= SUBSTITUTE,
@@ -208,13 +208,13 @@ pub fn evaluate(state: &State) -> f32 {
                     }
                 }
 
-                score -= get_boost_multiplier(state.side_two.get_active_immutable().attack_boost) * POKEMON_ATTACK_BOOST;
-                score -= get_boost_multiplier(state.side_two.get_active_immutable().defense_boost) * POKEMON_DEFENSE_BOOST;
-                score -= get_boost_multiplier(state.side_two.get_active_immutable().special_attack_boost)
+                score -= get_boost_multiplier(pkmn.attack_boost) * POKEMON_ATTACK_BOOST;
+                score -= get_boost_multiplier(pkmn.defense_boost) * POKEMON_DEFENSE_BOOST;
+                score -= get_boost_multiplier(pkmn.special_attack_boost)
                     * POKEMON_SPECIAL_ATTACK_BOOST;
-                score -= get_boost_multiplier(state.side_two.get_active_immutable().special_defense_boost)
+                score -= get_boost_multiplier(pkmn.special_defense_boost)
                     * POKEMON_SPECIAL_DEFENSE_BOOST;
-                score -= get_boost_multiplier(state.side_two.get_active_immutable().speed_boost) * POKEMON_SPEED_BOOST;
+                score -= get_boost_multiplier(pkmn.speed_boost) * POKEMON_SPEED_BOOST;
             }
         }
         if pkmn.terastallized {

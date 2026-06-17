@@ -1411,8 +1411,8 @@ pub fn ability_on_switch_in(
     let owner_slot = state.actor_slot();
     let def_pos = state.defender_position(side_ref);
     let (attacking_side, defending_side) = state.get_both_sides(side_ref);
-    let active_pkmn = attacking_side.get_active();
-    let defending_pkmn = defending_side.get_active_immutable();
+    let active_pkmn = attacking_side.get_active_slot(owner_slot);
+    let defending_pkmn = defending_side.get_active_slot_immutable(owner_slot);
     if defending_pkmn.ability == Abilities::NEUTRALIZINGGAS {
         return;
     }
@@ -1609,46 +1609,53 @@ pub fn ability_on_switch_in(
             }
         }
         Abilities::INTIMIDATE => {
-            let defender = defending_side.get_active_immutable();
-            if !(defender.ability == Abilities::OWNTEMPO
-                || defender.ability == Abilities::OBLIVIOUS
-                || defender.ability == Abilities::INNERFOCUS
-                || defender.ability == Abilities::SCRAPPY
-                || defending_side
-                    .get_active().volatile_statuses
-                    .contains(&PokemonVolatileStatus::SUBSTITUTE))
-            {
-                if apply_boost_instruction(
-                    defending_side,
-                    def_pos.slot,
-                    &PokemonBoostableStat::Attack,
-                    &-1,
-                    side_ref,
-                    &side_ref.get_other_side(),
-                    instructions,
-                ) {
-                    let defender = defending_side.get_active_immutable();
-                    if defender.item == Items::ADRENALINEORB {
-                        if apply_boost_instruction(
-                            defending_side,
-                            def_pos.slot,
-                            &PokemonBoostableStat::Speed,
-                            &1,
-                            &side_ref.get_other_side(),
-                            &side_ref.get_other_side(),
-                            instructions,
-                        ) {
-                            let adrenaline_orb_item_instruction =
-                                Instruction::ChangeItem(ChangeItemInstruction::new(
-                                    def_pos.side,
-                                    def_pos.slot,
-                                    Items::ADRENALINEORB,
-                                    Items::NONE,
-                                ));
-                            state.apply_one_instruction(&adrenaline_orb_item_instruction);
-                            instructions
-                                .instruction_list
-                                .push(adrenaline_orb_item_instruction)
+            for slot in 0..crate::state::ACTIVE_PER_SIDE as u8 {
+                if defending_side.get_active_slot_immutable(slot).hp <= 0 {
+                    continue;
+                }
+                let blocked = {
+                    let def_pkmn = defending_side.get_active_slot_immutable(slot);
+                    def_pkmn.ability == Abilities::OWNTEMPO
+                        || def_pkmn.ability == Abilities::OBLIVIOUS
+                        || def_pkmn.ability == Abilities::INNERFOCUS
+                        || def_pkmn.ability == Abilities::SCRAPPY
+                        || def_pkmn
+                            .volatile_statuses
+                            .contains(&PokemonVolatileStatus::SUBSTITUTE)
+                };
+                if !blocked {
+                    if apply_boost_instruction(
+                        defending_side,
+                        slot,
+                        &PokemonBoostableStat::Attack,
+                        &-1,
+                        side_ref,
+                        &side_ref.get_other_side(),
+                        instructions,
+                    ) {
+                        let has_orb =
+                            defending_side.get_active_slot_immutable(slot).item
+                                == Items::ADRENALINEORB;
+                        if has_orb {
+                            if apply_boost_instruction(
+                                defending_side,
+                                slot,
+                                &PokemonBoostableStat::Speed,
+                                &1,
+                                &side_ref.get_other_side(),
+                                &side_ref.get_other_side(),
+                                instructions,
+                            ) {
+                                defending_side.get_active_slot(slot).item = Items::NONE;
+                                instructions
+                                    .instruction_list
+                                    .push(Instruction::ChangeItem(ChangeItemInstruction::new(
+                                        side_ref.get_other_side(),
+                                        slot,
+                                        Items::ADRENALINEORB,
+                                        Items::NONE,
+                                    )));
+                            }
                         }
                     }
                 }

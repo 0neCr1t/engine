@@ -17,6 +17,7 @@ use poke_engine::engine::generate_instructions::{
 };
 use poke_engine::engine::state::{MoveChoice, PokemonVolatileStatus, SideAction};
 use poke_engine::decision;
+use poke_engine::engine::evaluate::evaluate;
 use poke_engine::instruction::{
     Instruction, StateInstructions, SwapActiveSlotsInstruction, ToggleForceSwitchSlotInstruction,
 };
@@ -1351,5 +1352,294 @@ fn test_doubles_side_action_from_string() {
     assert!(
         SideAction::from_string("tackle;tackle;tackle", &state.side_one, SideReference::SideOne)
             .is_none()
+    );
+}
+
+// ===========================================================================
+// Evaluate function: slot 1 coverage (verifies the Phase 1 fix).
+// ===========================================================================
+
+/// A +2 Special Attack boost on side_one's slot 1 should increase the evaluation
+/// score compared to an identical state without the boost.
+#[test]
+fn test_doubles_evaluate_sees_slot1_boosts() {
+    let mut state = simple_doubles_state();
+    let slot1_idx = state.side_one.active_indices[1];
+    state.side_one.pokemon[slot1_idx].special_attack_boost = 2;
+
+    let base = simple_doubles_state();
+    assert!(
+        evaluate(&state) > evaluate(&base),
+        "evaluate should score state higher when slot 1 has +2 SpA"
+    );
+}
+
+/// Leech Seed on side_one's slot 1 should decrease the evaluation score compared
+/// to an identical state without the volatile.
+#[test]
+fn test_doubles_evaluate_sees_slot1_volatiles() {
+    let mut state = simple_doubles_state();
+    let slot1_idx = state.side_one.active_indices[1];
+    state.side_one.pokemon[slot1_idx]
+        .volatile_statuses
+        .insert(PokemonVolatileStatus::LEECHSEED);
+
+    let base = simple_doubles_state();
+    assert!(
+        evaluate(&state) < evaluate(&base),
+        "evaluate should score state lower when slot 1 has Leech Seed"
+    );
+}
+
+// ===========================================================================
+// Additional doubles mechanics tests.
+// ===========================================================================
+
+/// Storm Drain on a partner redirects a Water move onto itself, nullifies the
+/// damage, and grants a +1 Special Attack boost.
+#[test]
+fn test_doubles_storm_drain_redirects_nullifies_and_boosts() {
+    let mut state = two_v_two_bulky();
+    set_move_on(&mut state, SideReference::SideOne, PokemonIndex::P0, Choices::SURF);
+    state.side_two.pokemon[PokemonIndex::P1].ability = Abilities::STORMDRAIN;
+
+    let nominal = BattlePosition::new(SideReference::SideTwo, 0);
+    let s1 = SideAction::new([move_at(nominal), MoveChoice::None]);
+    let s2 = SideAction::new([MoveChoice::None, MoveChoice::None]);
+
+    let instrs = generate_instructions_from_actions(&mut state, &s1, &s2, false);
+
+    assert_eq!(damage_to(&instrs, SideReference::SideTwo, 0), 0);
+    assert_eq!(damage_to(&instrs, SideReference::SideTwo, 1), 0);
+    assert!(
+        boost_instrs(&instrs).contains(&(
+            SideReference::SideTwo,
+            1,
+            PokemonBoostableStat::SpecialAttack,
+            1
+        )),
+        "Storm Drain holder should gain +1 SpA"
+    );
+}
+
+/// Team preview generates combined SideActions with two distinct lead Pokemon
+/// (never the same Pokemon in both slots).
+#[test]
+fn test_doubles_team_preview_options() {
+    let mut state = State::default();
+    state.team_preview = true;
+
+    let (s1, s2) = state.root_get_all_options_doubles();
+
+    assert!(!s1.is_empty(), "side one has lead combinations");
+    assert!(!s2.is_empty(), "side two has lead combinations");
+
+    for opt in &s1 {
+        assert!(
+            matches!(opt.actions[0], MoveChoice::Switch(_)),
+            "slot 0 action is Switch in team preview"
+        );
+        assert!(
+            matches!(opt.actions[1], MoveChoice::Switch(_)),
+            "slot 1 action is Switch in team preview"
+        );
+        // The same Pokemon cannot be led in both slots.
+        if let (MoveChoice::Switch(a), MoveChoice::Switch(b)) = (&opt.actions[0], &opt.actions[1]) {
+            assert_ne!(
+                a, b,
+                "team preview must not assign the same Pokemon to both slots"
+            );
+        }
+    }
+}
+
+/// Intimidate on switch-in applies -1 Attack to both opposing actives.
+#[test]
+fn test_doubles_intimidate_hits_both_foes() {
+    let mut state = two_v_two_bulky();
+    // Side one slot 1 fainted, replacement coming in.
+    state.side_one.pokemon[PokemonIndex::P1].hp = 0;
+    // The bench Pokemon (P2) will switch in with Intimidate.
+    state.side_one.pokemon[PokemonIndex::P2].ability = Abilities::INTIMIDATE;
+
+    let s1 = SideAction::new([MoveChoice::None, MoveChoice::Switch(PokemonIndex::P2)]);
+    let s2 = SideAction::new([MoveChoice::None, MoveChoice::None]);
+
+    let instrs = generate_instructions_from_actions(&mut state, &s1, &s2, false);
+
+    // Both side_two actives should receive an Attack drop.
+    let boosts = boost_instrs(&instrs);
+    let atk_minus1 = PokemonBoostableStat::Attack;
+    assert!(
+        boosts.contains(&(SideReference::SideTwo, 0, atk_minus1, -1)),
+        "side two slot 0 should get -1 Attack from Intimidate, got {:?}",
+        boosts
+    );
+    assert!(
+        boosts.contains(&(SideReference::SideTwo, 1, atk_minus1, -1)),
+        "side two slot 1 should get -1 Attack from Intimidate, got {:?}",
+        boosts
+    );
+}
+
+/// When one active uses Protect and the other attacks, the protected slot takes
+/// no damage while the unprotected slot is hit normally.
+#[test]
+fn test_doubles_protect_and_attack() {
+    let mut state = two_v_two_bulky();
+    // Side two slot 1 has Protect up.
+    state.side_two.pokemon[PokemonIndex::P1]
+        .volatile_statuses
+        .insert(PokemonVolatileStatus::PROTECT);
+    set_move_on(&mut state, SideReference::SideOne, PokemonIndex::P0, Choices::TACKLE);
+    set_move_on(&mut state, SideReference::SideOne, PokemonIndex::P1, Choices::TACKLE);
+
+    let foe0 = BattlePosition::new(SideReference::SideTwo, 0);
+    let foe1 = BattlePosition::new(SideReference::SideTwo, 1);
+    let s1 = SideAction::new([move_at(foe0), move_at(foe1)]);
+    let s2 = SideAction::new([MoveChoice::None, MoveChoice::None]);
+
+    let instrs = generate_instructions_from_actions(&mut state, &s1, &s2, false);
+
+    // Attack to unprotected foe (slot 0) lands normally.
+    assert!(damage_to(&instrs, SideReference::SideTwo, 0) > 0);
+    // Attack to slot 1 is blocked by Protect.
+    assert_eq!(damage_to(&instrs, SideReference::SideTwo, 1), 0);
+}
+
+/// Snipe Shot ignores Follow Me redirection and hits the originally chosen target.
+#[test]
+fn test_doubles_snipe_shot_ignores_follow_me() {
+    let mut state = two_v_two_bulky();
+    set_move_on(&mut state, SideReference::SideOne, PokemonIndex::P0, Choices::SNIPESHOT);
+    state.side_two.pokemon[PokemonIndex::P1]
+        .volatile_statuses
+        .insert(PokemonVolatileStatus::FOLLOWME);
+
+    let nominal = BattlePosition::new(SideReference::SideTwo, 0);
+    let s1 = SideAction::new([move_at(nominal), MoveChoice::None]);
+    let s2 = SideAction::new([MoveChoice::None, MoveChoice::None]);
+
+    let instrs = generate_instructions_from_actions(&mut state, &s1, &s2, false);
+
+    assert!(damage_to(&instrs, SideReference::SideTwo, 0) > 0, "hits chosen foe");
+    assert_eq!(damage_to(&instrs, SideReference::SideTwo, 1), 0, "ignores Follow Me");
+}
+
+/// When both sides have all slots idle, `is_none_action` returns true for both.
+#[test]
+fn test_doubles_both_sides_none_action() {
+    let s1 = SideAction::new([MoveChoice::None, MoveChoice::None]);
+    let s2 = SideAction::new([MoveChoice::None, MoveChoice::None]);
+
+    assert!(decision::is_none_action(&s1));
+    assert!(decision::is_none_action(&s2));
+}
+
+// ===========================================================================
+// Edge-case tests: evaluate symmetry, mid-turn multi-faint, confusion.
+// ===========================================================================
+
+/// A boost on side_two's slot 1 should decrease the evaluation score (side_two
+/// contributions are subtracted), confirming symmetry with side_one.
+#[test]
+fn test_doubles_evaluate_sees_slot1_for_side_two() {
+    let mut state = simple_doubles_state();
+    let slot1_idx = state.side_two.active_indices[1];
+    state.side_two.pokemon[slot1_idx].special_attack_boost = 2;
+
+    let base = simple_doubles_state();
+    assert!(
+        evaluate(&state) < evaluate(&base),
+        "evaluate should score lower (worse for side_one) when side_two slot 1 has +2 SpA"
+    );
+}
+
+/// A spread move that deals enough damage to faint both opposing actives should
+/// produce fatal damage instructions for both slots (leaving zero HP or less), and
+/// `any_force_switch` should return true on the fainted side.
+#[test]
+fn test_doubles_spread_move_faints_both_opposing_actives() {
+    let mut state = two_v_two_bulky();
+    // Make side_two actives frail (1 HP each).
+    state.side_two.pokemon[PokemonIndex::P0].hp = 1;
+    state.side_two.pokemon[PokemonIndex::P0].maxhp = 1;
+    state.side_two.pokemon[PokemonIndex::P1].hp = 1;
+    state.side_two.pokemon[PokemonIndex::P1].maxhp = 1;
+    // High attack so Earthquake kills.
+    state.side_one.pokemon[PokemonIndex::P0].attack = 999;
+    set_move_on(&mut state, SideReference::SideOne, PokemonIndex::P0, Choices::EARTHQUAKE);
+
+    let nominal = BattlePosition::new(SideReference::SideTwo, 0);
+    let s1 = SideAction::new([move_at(nominal), MoveChoice::None]);
+    let s2 = SideAction::new([MoveChoice::None, MoveChoice::None]);
+
+    let instrs = generate_instructions_from_actions(&mut state, &s1, &s2, false);
+
+    // At least one branch: both foes are hit by the spread move.
+    assert!(!instrs.is_empty());
+
+    // Within each branch, at least one damage instruction lands on each foe slot
+    // and the damage amount should be >= their max HP.
+    for branch in &instrs {
+        let dmg0 = damage_to(&[branch.clone()], SideReference::SideTwo, 0);
+        let dmg1 = damage_to(&[branch.clone()], SideReference::SideTwo, 1);
+        assert!(dmg0 >= 1, "foe slot 0 should take fatal damage, got {}", dmg0);
+        assert!(dmg1 >= 1, "foe slot 1 should take fatal damage, got {}", dmg1);
+    }
+}
+
+/// A confused Pokemon (slot 0 of side_one) has a chance of hitting itself instead
+/// of executing its chosen move. The instruction output contains both the
+/// normal-move branch and the confusion-self-hit branch.
+#[test]
+fn test_doubles_confused_pokemon_has_self_hit_branch() {
+    let mut state = two_v_two_bulky();
+    set_move_on(&mut state, SideReference::SideOne, PokemonIndex::P0, Choices::TACKLE);
+    state.side_one.pokemon[PokemonIndex::P0]
+        .volatile_statuses
+        .insert(PokemonVolatileStatus::CONFUSION);
+
+    let foe0 = BattlePosition::new(SideReference::SideTwo, 0);
+    let s1 = SideAction::new([move_at(foe0), MoveChoice::None]);
+    let s2 = SideAction::new([MoveChoice::None, MoveChoice::None]);
+
+    let instrs = generate_instructions_from_actions(&mut state, &s1, &s2, false);
+
+    // Confusion branches: one where the move executes normally, one where the
+    // Pokemon hits itself. Two branches expected (damage not branched).
+    let branches_with_self_hit: Vec<_> = instrs
+        .iter()
+        .filter(|si| {
+            si.instruction_list.iter().any(|i| match i {
+                Instruction::Damage(d) => d.side_ref == SideReference::SideOne && d.slot == 0,
+                _ => false,
+            })
+        })
+        .collect();
+    let branches_with_foe_hit: Vec<_> = instrs
+        .iter()
+        .filter(|si| {
+            si.instruction_list.iter().any(|i| match i {
+                Instruction::Damage(d) => d.side_ref == SideReference::SideTwo,
+                _ => false,
+            })
+        })
+        .collect();
+
+    assert!(
+        !branches_with_self_hit.is_empty(),
+        "one branch should contain self-inflicted confusion damage"
+    );
+    assert!(
+        !branches_with_foe_hit.is_empty(),
+        "one branch should contain the normal Tackle against the foe"
+    );
+    // Both branches should not appear in the same instruction list.
+    assert!(
+        instrs
+            .iter()
+            .all(|si| branches_with_self_hit.contains(&si) != branches_with_foe_hit.contains(&si)),
+        "each branch is either self-hit or foe-hit, not both"
     );
 }

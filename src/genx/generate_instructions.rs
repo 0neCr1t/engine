@@ -2107,8 +2107,12 @@ fn generate_instructions_from_existing_status_conditions(
 /// redirection abilities (Lightning Rod for Electric, Storm Drain for Water).
 ///
 /// Returns the (possibly redirected) target position. Only affects single-target
-/// foe moves; spread/self/ally/side moves and the few redirection-immune cases
-/// (Snipe Shot, Propeller Tail / Stalwart attackers) are returned unchanged.
+/// Moves and abilities that ignore all redirection (Snipe Shot, Propeller Tail /
+/// Stalwart) are returned unchanged. Volatile redirection (Follow Me, Rage Powder,
+/// Spotlight) only applies to single-target foe moves. Ability-based redirection
+/// (Lightning Rod, Storm Drain) applies to ALL moves of the matching type,
+/// including spread moves. When both volatile and ability redirection could apply
+/// to a single-target move, the volatile takes precedence.
 /// No-op in singles (there is never a second slot to redirect to).
 #[cfg(feature = "doubles")]
 fn redirect_target(
@@ -2117,29 +2121,46 @@ fn redirect_target(
     choice: &Choice,
     nominal: BattlePosition,
 ) -> BattlePosition {
-    // Redirection only applies to moves that single out one foe.
-    if choice.target != MoveTarget::Opponent || choice.category == MoveCategory::Switch {
-        return nominal;
-    }
     let attacker = state
         .get_side_immutable(&attacking_side)
         .get_active_slot_immutable(state.actor_slot());
-    // Moves/abilities that ignore redirection entirely.
+    // Moves/abilities that ignore all redirection (checked first, blocks
+    // both volatile and ability redirection).
     if choice.move_id == Choices::SNIPESHOT
         || attacker.ability == Abilities::PROPELLERTAIL
         || attacker.ability == Abilities::STALWART
     {
         return nominal;
     }
-    let attacker_is_grass =
-        attacker.types.0 == PokemonType::GRASS || attacker.types.1 == PokemonType::GRASS;
-    let attacker_ignores_powder = attacker_is_grass || attacker.ability == Abilities::OVERCOAT;
 
     let target_side_ref = nominal.side;
     let target_side = state.get_side_immutable(&target_side_ref);
 
-    let mut volatile_redirect: Option<BattlePosition> = None;
+    // Ability-based redirection (Lightning Rod, Storm Drain) applies to ALL
+    // moves of the matching type, including spread moves.
     let mut ability_redirect: Option<BattlePosition> = None;
+    for slot in 0..crate::state::ACTIVE_PER_SIDE as u8 {
+        let pkmn = target_side.get_active_slot_immutable(slot);
+        if pkmn.hp <= 0 {
+            continue;
+        }
+        if (pkmn.ability == Abilities::LIGHTNINGROD && choice.move_type == PokemonType::ELECTRIC)
+            || (pkmn.ability == Abilities::STORMDRAIN && choice.move_type == PokemonType::WATER)
+        {
+            ability_redirect = Some(BattlePosition::new(target_side_ref, slot));
+        }
+    }
+
+    // Volatile-based redirection only applies to single-target foe moves.
+    if choice.target != MoveTarget::Opponent || choice.category == MoveCategory::Switch {
+        return ability_redirect.unwrap_or(nominal);
+    }
+
+    let attacker_is_grass =
+        attacker.types.0 == PokemonType::GRASS || attacker.types.1 == PokemonType::GRASS;
+    let attacker_ignores_powder = attacker_is_grass || attacker.ability == Abilities::OVERCOAT;
+
+    let mut volatile_redirect: Option<BattlePosition> = None;
     for slot in 0..crate::state::ACTIVE_PER_SIDE as u8 {
         let pkmn = target_side.get_active_slot_immutable(slot);
         if pkmn.hp <= 0 {
@@ -2160,11 +2181,6 @@ fn redirect_target(
             && !attacker_ignores_powder
         {
             volatile_redirect = Some(pos);
-        }
-        if (pkmn.ability == Abilities::LIGHTNINGROD && choice.move_type == PokemonType::ELECTRIC)
-            || (pkmn.ability == Abilities::STORMDRAIN && choice.move_type == PokemonType::WATER)
-        {
-            ability_redirect = Some(pos);
         }
     }
     volatile_redirect.or(ability_redirect).unwrap_or(nominal)
