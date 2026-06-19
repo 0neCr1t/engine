@@ -135,7 +135,7 @@ fn burn_modifier(
 
 fn volatile_status_modifier(choice: &Choice, attacking_side: &Side, defending_side: &Side) -> f32 {
     let mut modifier = 1.0;
-    let atk = &attacking_side.volatile_statuses;
+    let atk = &attacking_side.get_active_immutable().volatile_statuses;
     if atk.contains(&PokemonVolatileStatus::FLASHFIRE) && choice.move_type == PokemonType::FIRE {
         modifier *= 1.5;
     }
@@ -147,7 +147,7 @@ fn volatile_status_modifier(choice: &Choice, attacking_side: &Side, defending_si
         modifier *= 2.0;
     }
 
-    let def = &defending_side.volatile_statuses;
+    let def = &defending_side.get_active_immutable().volatile_statuses;
     if def.contains(&PokemonVolatileStatus::BOUNCE)
         || def.contains(&PokemonVolatileStatus::DIG)
         || def.contains(&PokemonVolatileStatus::DIVE)
@@ -170,13 +170,13 @@ fn get_attacking_and_defending_stats(
 
     match choice.category {
         MoveCategory::Physical => {
-            if attacking_side.attack_boost > 0 {
+            if attacking_side.get_active_immutable().attack_boost > 0 {
                 crit_attacking_stat =
                     attacking_side.calculate_boosted_stat(PokemonBoostableStat::Attack);
             } else {
                 crit_attacking_stat = attacker.attack;
             }
-            if defending_side.defense_boost <= 0 {
+            if defending_side.get_active_immutable().defense_boost <= 0 {
                 crit_defending_stat =
                     defending_side.calculate_boosted_stat(PokemonBoostableStat::Defense);
             } else {
@@ -189,13 +189,13 @@ fn get_attacking_and_defending_stats(
                 defending_side.calculate_boosted_stat(PokemonBoostableStat::Defense);
         }
         MoveCategory::Special => {
-            if attacking_side.special_attack_boost > 0 {
+            if attacking_side.get_active_immutable().special_attack_boost > 0 {
                 crit_attacking_stat =
                     attacking_side.calculate_boosted_stat(PokemonBoostableStat::SpecialAttack);
             } else {
                 crit_attacking_stat = attacker.special_attack;
             }
-            if defending_side.special_defense_boost <= 0 {
+            if defending_side.get_active_immutable().special_defense_boost <= 0 {
                 crit_defending_stat =
                     defending_side.calculate_boosted_stat(PokemonBoostableStat::SpecialDefense);
             } else {

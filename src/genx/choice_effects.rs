@@ -210,7 +210,7 @@ pub fn modify_choice(
                 });
             }
         }
-        Choices::FAKEOUT | Choices::FIRSTIMPRESSION => match attacking_side.last_used_move {
+        Choices::FAKEOUT | Choices::FIRSTIMPRESSION => match attacking_side.get_active_immutable().last_used_move {
             LastUsedMove::Move(_) => attacker_choice.remove_all_effects(),
             _ => {}
         },
@@ -274,7 +274,7 @@ pub fn modify_choice(
         }
         Choices::NORETREAT => {
             if attacking_side
-                .volatile_statuses
+                .get_active_immutable().volatile_statuses
                 .contains(&PokemonVolatileStatus::NORETREAT)
             {
                 attacker_choice.boost = None;
@@ -332,7 +332,7 @@ pub fn modify_choice(
                     accuracy: 0,
                 },
             });
-            if defending_side.attack_boost != -6 {
+            if defending_side.get_active_immutable().attack_boost != -6 {
                 let defender_attack =
                     defending_side.calculate_boosted_stat(PokemonBoostableStat::Attack);
                 let attacker_maxhp = attacking_side.get_active_immutable().maxhp;
@@ -470,10 +470,10 @@ pub fn modify_choice(
             }
         }
         Choices::FOCUSPUNCH => {
-            if (defending_side.damage_dealt.move_category == MoveCategory::Physical
-                || defending_side.damage_dealt.move_category == MoveCategory::Special)
-                && !defending_side.damage_dealt.hit_substitute
-                && defending_side.damage_dealt.damage > 0
+            if (defending_side.get_active_immutable().damage_dealt.move_category == MoveCategory::Physical
+                || defending_side.get_active_immutable().damage_dealt.move_category == MoveCategory::Special)
+                && !defending_side.get_active_immutable().damage_dealt.hit_substitute
+                && defending_side.get_active_immutable().damage_dealt.damage > 0
             {
                 attacker_choice.remove_all_effects();
             }
@@ -502,7 +502,7 @@ pub fn modify_choice(
                 ((25.0 * defender_speed as f32 / attacker_speed as f32) + 1.0).min(150.0);
         }
         Choices::AVALANCHE => {
-            if !attacker_choice.first_move && defending_side.damage_dealt.damage > 0 {
+            if !attacker_choice.first_move && defending_side.get_active_immutable().damage_dealt.damage > 0 {
                 attacker_choice.base_power *= 2.0;
             }
         }
@@ -533,13 +533,13 @@ pub fn modify_choice(
             }
         }
         Choices::STOREDPOWER | Choices::POWERTRIP => {
-            let total_boosts = attacking_side.attack_boost.max(0)
-                + attacking_side.defense_boost.max(0)
-                + attacking_side.special_attack_boost.max(0)
-                + attacking_side.special_defense_boost.max(0)
-                + attacking_side.speed_boost.max(0)
-                + attacking_side.accuracy_boost.max(0)
-                + attacking_side.evasion_boost.max(0);
+            let total_boosts = attacking_side.get_active_immutable().attack_boost.max(0)
+                + attacking_side.get_active_immutable().defense_boost.max(0)
+                + attacking_side.get_active_immutable().special_attack_boost.max(0)
+                + attacking_side.get_active_immutable().special_defense_boost.max(0)
+                + attacking_side.get_active_immutable().speed_boost.max(0)
+                + attacking_side.get_active_immutable().accuracy_boost.max(0)
+                + attacking_side.get_active_immutable().evasion_boost.max(0);
             if total_boosts > 0 {
                 attacker_choice.base_power += 20.0 * total_boosts as f32;
             }
@@ -624,62 +624,69 @@ pub fn choice_after_damage_hit(
     instructions: &mut StateInstructions,
     hit_sub: bool,
 ) {
+    let act_slot = state.actor_slot();
+    let def_pos = state.defender_position(attacking_side_ref);
     let (attacking_side, defending_side) = state.get_both_sides(attacking_side_ref);
     let attacker_active = attacking_side.get_active();
     if choice.flags.recharge {
-        let instruction = Instruction::ApplyVolatileStatus(ApplyVolatileStatusInstruction {
-            side_ref: attacking_side_ref.clone(),
-            volatile_status: PokemonVolatileStatus::MUSTRECHARGE,
-        });
+        let instruction = Instruction::ApplyVolatileStatus(ApplyVolatileStatusInstruction::new(
+            *attacking_side_ref,
+            act_slot,
+            PokemonVolatileStatus::MUSTRECHARGE,
+        ));
         instructions.instruction_list.push(instruction);
         attacking_side
-            .volatile_statuses
+            .get_active().volatile_statuses
             .insert(PokemonVolatileStatus::MUSTRECHARGE);
 
     // Recharging and truant are mutually exclusive, with recharge taking priority
     } else if attacker_active.ability == Abilities::TRUANT {
-        let instruction = Instruction::ApplyVolatileStatus(ApplyVolatileStatusInstruction {
-            side_ref: attacking_side_ref.clone(),
-            volatile_status: PokemonVolatileStatus::TRUANT,
-        });
+        let instruction = Instruction::ApplyVolatileStatus(ApplyVolatileStatusInstruction::new(
+            *attacking_side_ref,
+            act_slot,
+            PokemonVolatileStatus::TRUANT,
+        ));
         instructions.instruction_list.push(instruction);
         attacking_side
-            .volatile_statuses
+            .get_active().volatile_statuses
             .insert(PokemonVolatileStatus::TRUANT);
     }
     match choice.move_id {
         Choices::DOUBLESHOCK => {
             let attacker_active = attacking_side.get_active_immutable();
             let instruction = if attacker_active.types.0 == PokemonType::ELECTRIC {
-                Some(Instruction::ChangeType(ChangeType {
-                    side_ref: *attacking_side_ref,
-                    new_types: (PokemonType::TYPELESS, attacker_active.types.1),
-                    old_types: attacker_active.types,
-                }))
+                Some(Instruction::ChangeType(ChangeType::new(
+                    *attacking_side_ref,
+                    act_slot,
+                    (PokemonType::TYPELESS, attacker_active.types.1),
+                    attacker_active.types,
+                )))
             } else if attacker_active.types.1 == PokemonType::ELECTRIC {
-                Some(Instruction::ChangeType(ChangeType {
-                    side_ref: *attacking_side_ref,
-                    new_types: (attacker_active.types.0, PokemonType::TYPELESS),
-                    old_types: attacker_active.types,
-                }))
+                Some(Instruction::ChangeType(ChangeType::new(
+                    *attacking_side_ref,
+                    act_slot,
+                    (attacker_active.types.0, PokemonType::TYPELESS),
+                    attacker_active.types,
+                )))
             } else {
                 None
             };
             if let Some(typechange_instruction) = instruction {
                 if !attacking_side
-                    .volatile_statuses
+                    .get_active().volatile_statuses
                     .contains(&PokemonVolatileStatus::TYPECHANGE)
                 {
                     instructions
                         .instruction_list
                         .push(Instruction::ApplyVolatileStatus(
-                            ApplyVolatileStatusInstruction {
-                                side_ref: attacking_side_ref.clone(),
-                                volatile_status: PokemonVolatileStatus::TYPECHANGE,
-                            },
+                            ApplyVolatileStatusInstruction::new(
+                                *attacking_side_ref,
+                                act_slot,
+                                PokemonVolatileStatus::TYPECHANGE,
+                            ),
                         ));
                     attacking_side
-                        .volatile_statuses
+                        .get_active().volatile_statuses
                         .insert(PokemonVolatileStatus::TYPECHANGE);
                 }
                 state.apply_one_instruction(&typechange_instruction);
@@ -689,35 +696,38 @@ pub fn choice_after_damage_hit(
         Choices::BURNUP => {
             let attacker_active = attacking_side.get_active_immutable();
             let instruction = if attacker_active.types.0 == PokemonType::FIRE {
-                Some(Instruction::ChangeType(ChangeType {
-                    side_ref: *attacking_side_ref,
-                    new_types: (PokemonType::TYPELESS, attacker_active.types.1),
-                    old_types: attacker_active.types,
-                }))
+                Some(Instruction::ChangeType(ChangeType::new(
+                    *attacking_side_ref,
+                    act_slot,
+                    (PokemonType::TYPELESS, attacker_active.types.1),
+                    attacker_active.types,
+                )))
             } else if attacker_active.types.1 == PokemonType::FIRE {
-                Some(Instruction::ChangeType(ChangeType {
-                    side_ref: *attacking_side_ref,
-                    new_types: (attacker_active.types.0, PokemonType::TYPELESS),
-                    old_types: attacker_active.types,
-                }))
+                Some(Instruction::ChangeType(ChangeType::new(
+                    *attacking_side_ref,
+                    act_slot,
+                    (attacker_active.types.0, PokemonType::TYPELESS),
+                    attacker_active.types,
+                )))
             } else {
                 None
             };
             if let Some(typechange_instruction) = instruction {
                 if !attacking_side
-                    .volatile_statuses
+                    .get_active().volatile_statuses
                     .contains(&PokemonVolatileStatus::TYPECHANGE)
                 {
                     instructions
                         .instruction_list
                         .push(Instruction::ApplyVolatileStatus(
-                            ApplyVolatileStatusInstruction {
-                                side_ref: attacking_side_ref.clone(),
-                                volatile_status: PokemonVolatileStatus::TYPECHANGE,
-                            },
+                            ApplyVolatileStatusInstruction::new(
+                                *attacking_side_ref,
+                                act_slot,
+                                PokemonVolatileStatus::TYPECHANGE,
+                            ),
                         ));
                     attacking_side
-                        .volatile_statuses
+                        .get_active().volatile_statuses
                         .insert(PokemonVolatileStatus::TYPECHANGE);
                 }
                 state.apply_one_instruction(&typechange_instruction);
@@ -768,11 +778,12 @@ pub fn choice_after_damage_hit(
                 && defender_active.item != Items::NONE
                 && !hit_sub
             {
-                let instruction = Instruction::ChangeItem(ChangeItemInstruction {
-                    side_ref: attacking_side_ref.get_other_side(),
-                    current_item: defender_active.item,
-                    new_item: Items::NONE,
-                });
+                let instruction = Instruction::ChangeItem(ChangeItemInstruction::new(
+                    def_pos.side,
+                    def_pos.slot,
+                    defender_active.item,
+                    Items::NONE,
+                ));
                 instructions.instruction_list.push(instruction);
                 defender_active.item = Items::NONE;
             }
@@ -787,19 +798,21 @@ pub fn choice_after_damage_hit(
             {
                 let defender_item = defender_active.item;
 
-                let instruction = Instruction::ChangeItem(ChangeItemInstruction {
-                    side_ref: attacking_side_ref.get_other_side(),
-                    current_item: defender_item,
-                    new_item: Items::NONE,
-                });
+                let instruction = Instruction::ChangeItem(ChangeItemInstruction::new(
+                    def_pos.side,
+                    def_pos.slot,
+                    defender_item,
+                    Items::NONE,
+                ));
                 instructions.instruction_list.push(instruction);
                 defender_active.item = Items::NONE;
 
-                let instruction = Instruction::ChangeItem(ChangeItemInstruction {
-                    side_ref: *attacking_side_ref,
-                    current_item: Items::NONE,
-                    new_item: defender_item,
-                });
+                let instruction = Instruction::ChangeItem(ChangeItemInstruction::new(
+                    *attacking_side_ref,
+                    act_slot,
+                    Items::NONE,
+                    defender_item,
+                ));
                 instructions.instruction_list.push(instruction);
                 attacker_active.item = defender_item;
             }
@@ -839,19 +852,20 @@ fn destinybond_before_move(
     // destinybond is preserved, even if used twice in a row
     if choice.move_id != Choices::DESTINYBOND
         && attacking_side
-            .volatile_statuses
+            .get_active().volatile_statuses
             .contains(&PokemonVolatileStatus::DESTINYBOND)
     {
         instructions
             .instruction_list
             .push(Instruction::RemoveVolatileStatus(
-                RemoveVolatileStatusInstruction {
-                    side_ref: *attacking_side_ref,
-                    volatile_status: PokemonVolatileStatus::DESTINYBOND,
-                },
+                RemoveVolatileStatusInstruction::new(
+                    *attacking_side_ref,
+                    0, // FIXME(doubles): slot - no `state` param available to compute actor_slot
+                    PokemonVolatileStatus::DESTINYBOND,
+                ),
             ));
         attacking_side
-            .volatile_statuses
+            .get_active().volatile_statuses
             .remove(&PokemonVolatileStatus::DESTINYBOND);
     }
 }
@@ -865,19 +879,20 @@ fn destinybond_before_move(
 ) {
     // gens 7+ destinybond cannot be used if destinybond is active
     if attacking_side
-        .volatile_statuses
+        .get_active().volatile_statuses
         .contains(&PokemonVolatileStatus::DESTINYBOND)
     {
         instructions
             .instruction_list
             .push(Instruction::RemoveVolatileStatus(
-                RemoveVolatileStatusInstruction {
-                    side_ref: *attacking_side_ref,
-                    volatile_status: PokemonVolatileStatus::DESTINYBOND,
-                },
+                RemoveVolatileStatusInstruction::new(
+                    *attacking_side_ref,
+                    0, // FIXME(doubles): slot - no `state` param available to compute actor_slot
+                    PokemonVolatileStatus::DESTINYBOND,
+                ),
             ));
         attacking_side
-            .volatile_statuses
+            .get_active().volatile_statuses
             .remove(&PokemonVolatileStatus::DESTINYBOND);
         if choice.move_id == Choices::DESTINYBOND {
             choice.remove_all_effects();
@@ -891,6 +906,8 @@ pub fn choice_before_move(
     attacking_side_ref: &SideReference,
     instructions: &mut StateInstructions,
 ) {
+    let act_slot = state.actor_slot();
+    let _def_pos = state.defender_position(attacking_side_ref);
     let (attacking_side, defending_side) = state.get_both_sides(attacking_side_ref);
 
     destinybond_before_move(attacking_side, attacking_side_ref, choice, instructions);
@@ -900,7 +917,7 @@ pub fn choice_before_move(
     {
         add_remove_status_instructions(
             instructions,
-            attacking_side.active_index,
+            attacking_side.active_indices[0],
             *attacking_side_ref,
             attacking_side,
         );
@@ -917,10 +934,10 @@ pub fn choice_before_move(
                     .instruction_list
                     .push(Instruction::SetFutureSight(SetFutureSightInstruction {
                         side_ref: *attacking_side_ref,
-                        pokemon_index: attacking_side.active_index,
+                        pokemon_index: attacking_side.active_indices[0],
                         previous_pokemon_index: attacking_side.future_sight.1,
                     }));
-                attacking_side.future_sight = (3, attacking_side.active_index);
+                attacking_side.future_sight = (3, attacking_side.active_indices[0]);
             }
         }
         Choices::EXPLOSION | Choices::SELFDESTRUCT | Choices::MISTYEXPLOSION
@@ -929,25 +946,28 @@ pub fn choice_before_move(
             let damage_amount = attacker.hp;
             instructions
                 .instruction_list
-                .push(Instruction::Damage(DamageInstruction {
-                    side_ref: *attacking_side_ref,
+                .push(Instruction::Damage(DamageInstruction::new(
+                    *attacking_side_ref,
+                    act_slot,
                     damage_amount,
-                }));
+                )));
             attacker.hp = 0;
         }
         Choices::MINDBLOWN if defender.ability != Abilities::DAMP => {
             let damage_amount = cmp::min(attacker.maxhp / 2, attacker.hp);
             instructions
                 .instruction_list
-                .push(Instruction::Damage(DamageInstruction {
-                    side_ref: *attacking_side_ref,
+                .push(Instruction::Damage(DamageInstruction::new(
+                    *attacking_side_ref,
+                    act_slot,
                     damage_amount,
-                }));
+                )));
             attacker.hp -= damage_amount;
         }
         Choices::METEORBEAM | Choices::ELECTROSHOT if choice.flags.charge => {
             apply_boost_instruction(
                 attacking_side,
+                act_slot,
                 &PokemonBoostableStat::SpecialAttack,
                 &1,
                 attacking_side_ref,
@@ -963,11 +983,12 @@ pub fn choice_before_move(
         && attacker.item == Items::POWERHERB
         && choice.move_id != Choices::SKYDROP
     {
-        let instruction = Instruction::ChangeItem(ChangeItemInstruction {
-            side_ref: *attacking_side_ref,
-            current_item: Items::POWERHERB,
-            new_item: Items::NONE,
-        });
+        let instruction = Instruction::ChangeItem(ChangeItemInstruction::new(
+            *attacking_side_ref,
+            act_slot,
+            Items::POWERHERB,
+            Items::NONE,
+        ));
         attacker.item = Items::NONE;
         choice.flags.charge = false;
         instructions.instruction_list.push(instruction);
@@ -1103,56 +1124,60 @@ pub fn choice_hazard_clear(
             }
             if state
                 .side_one
-                .volatile_statuses
+                .get_active().volatile_statuses
                 .contains(&PokemonVolatileStatus::SUBSTITUTE)
             {
                 instructions
                     .instruction_list
                     .push(Instruction::ChangeSubstituteHealth(
-                        ChangeSubsituteHealthInstruction {
-                            side_ref: SideReference::SideOne,
-                            health_change: -1 * state.side_one.substitute_health,
-                        },
+                        ChangeSubsituteHealthInstruction::new(
+                            SideReference::SideOne,
+                            0, // FIXME(doubles): slot - absolute SideOne, per-active in doubles
+                            -1 * state.side_one.get_active().substitute_health,
+                        ),
                     ));
                 instructions
                     .instruction_list
                     .push(Instruction::RemoveVolatileStatus(
-                        RemoveVolatileStatusInstruction {
-                            side_ref: SideReference::SideOne,
-                            volatile_status: PokemonVolatileStatus::SUBSTITUTE,
-                        },
+                        RemoveVolatileStatusInstruction::new(
+                            SideReference::SideOne,
+                            0, // FIXME(doubles): slot - absolute SideOne, per-active in doubles
+                            PokemonVolatileStatus::SUBSTITUTE,
+                        ),
                     ));
-                state.side_one.substitute_health = 0;
+                state.side_one.get_active().substitute_health = 0;
                 state
                     .side_one
-                    .volatile_statuses
+                    .get_active().volatile_statuses
                     .remove(&PokemonVolatileStatus::SUBSTITUTE);
             }
             if state
                 .side_two
-                .volatile_statuses
+                .get_active().volatile_statuses
                 .contains(&PokemonVolatileStatus::SUBSTITUTE)
             {
                 instructions
                     .instruction_list
                     .push(Instruction::ChangeSubstituteHealth(
-                        ChangeSubsituteHealthInstruction {
-                            side_ref: SideReference::SideTwo,
-                            health_change: -1 * state.side_two.substitute_health,
-                        },
+                        ChangeSubsituteHealthInstruction::new(
+                            SideReference::SideTwo,
+                            0, // FIXME(doubles): slot - absolute SideTwo, per-active in doubles
+                            -1 * state.side_two.get_active().substitute_health,
+                        ),
                     ));
                 instructions
                     .instruction_list
                     .push(Instruction::RemoveVolatileStatus(
-                        RemoveVolatileStatusInstruction {
-                            side_ref: SideReference::SideTwo,
-                            volatile_status: PokemonVolatileStatus::SUBSTITUTE,
-                        },
+                        RemoveVolatileStatusInstruction::new(
+                            SideReference::SideTwo,
+                            0, // FIXME(doubles): slot - absolute SideTwo, per-active in doubles
+                            PokemonVolatileStatus::SUBSTITUTE,
+                        ),
                     ));
-                state.side_two.substitute_health = 0;
+                state.side_two.get_active().substitute_health = 0;
                 state
                     .side_two
-                    .volatile_statuses
+                    .get_active().volatile_statuses
                     .remove(&PokemonVolatileStatus::SUBSTITUTE);
             }
         }
@@ -1216,87 +1241,108 @@ pub fn choice_special_effect(
     attacking_side_ref: &SideReference,
     instructions: &mut StateInstructions,
 ) {
+    let act_slot = state.actor_slot();
+    let def_pos = state.defender_position(attacking_side_ref);
     let (attacking_side, defending_side) = state.get_both_sides(attacking_side_ref);
     match choice.move_id {
+        // Ally Switch (doubles): swap the user with its partner. Only resolves
+        // when a living partner exists; a no-op otherwise.
+        #[cfg(feature = "doubles")]
+        Choices::ALLYSWITCH => {
+            let other = 1 - act_slot;
+            if attacking_side.get_active_slot_immutable(other).hp > 0 {
+                instructions.instruction_list.push(Instruction::SwapActiveSlots(
+                    crate::instruction::SwapActiveSlotsInstruction {
+                        side_ref: *attacking_side_ref,
+                    },
+                ));
+                attacking_side.active_indices.swap(0, 1);
+            }
+        }
         Choices::BELLYDRUM => {
-            let boost_amount = 6 - attacking_side.attack_boost;
+            let boost_amount = 6 - attacking_side.get_active().attack_boost;
             let attacker = attacking_side.get_active();
             if attacker.hp > attacker.maxhp / 2 {
                 instructions
                     .instruction_list
-                    .push(Instruction::Damage(DamageInstruction {
-                        side_ref: *attacking_side_ref,
-                        damage_amount: attacker.maxhp / 2,
-                    }));
+                    .push(Instruction::Damage(DamageInstruction::new(
+                        *attacking_side_ref,
+                        act_slot,
+                        attacker.maxhp / 2,
+                    )));
                 instructions
                     .instruction_list
-                    .push(Instruction::Boost(BoostInstruction {
-                        side_ref: *attacking_side_ref,
-                        stat: PokemonBoostableStat::Attack,
-                        amount: boost_amount,
-                    }));
+                    .push(Instruction::Boost(BoostInstruction::new(
+                        *attacking_side_ref,
+                        act_slot,
+                        PokemonBoostableStat::Attack,
+                        boost_amount,
+                    )));
                 attacker.hp -= attacker.maxhp / 2;
-                attacking_side.attack_boost = 6;
+                attacking_side.get_active().attack_boost = 6;
             }
         }
         Choices::COUNTER => {
-            if defending_side.damage_dealt.move_category == MoveCategory::Physical
+            if defending_side.get_active().damage_dealt.move_category == MoveCategory::Physical
                 && !defending_side
                     .get_active_immutable()
                     .has_type(&PokemonType::GHOST)
             {
                 let damage_amount = cmp::min(
-                    defending_side.damage_dealt.damage * 2,
+                    defending_side.get_active().damage_dealt.damage * 2,
                     defending_side.get_active_immutable().hp,
                 );
                 if damage_amount > 0 {
                     instructions
                         .instruction_list
-                        .push(Instruction::Damage(DamageInstruction {
-                            side_ref: attacking_side_ref.get_other_side(),
-                            damage_amount: damage_amount,
-                        }));
+                        .push(Instruction::Damage(DamageInstruction::new(
+                            def_pos.side,
+                            def_pos.slot,
+                            damage_amount,
+                        )));
                     defending_side.get_active().hp -= damage_amount;
                 }
             }
         }
         Choices::MIRRORCOAT => {
-            if defending_side.damage_dealt.move_category == MoveCategory::Special
+            if defending_side.get_active().damage_dealt.move_category == MoveCategory::Special
                 && !defending_side
                     .get_active_immutable()
                     .has_type(&PokemonType::DARK)
             {
                 let damage_amount = cmp::min(
-                    defending_side.damage_dealt.damage * 2,
+                    defending_side.get_active().damage_dealt.damage * 2,
                     defending_side.get_active_immutable().hp,
                 );
                 if damage_amount > 0 {
                     instructions
                         .instruction_list
-                        .push(Instruction::Damage(DamageInstruction {
-                            side_ref: attacking_side_ref.get_other_side(),
-                            damage_amount: damage_amount,
-                        }));
+                        .push(Instruction::Damage(DamageInstruction::new(
+                            def_pos.side,
+                            def_pos.slot,
+                            damage_amount,
+                        )));
                     defending_side.get_active().hp -= damage_amount;
                 }
             }
         }
         Choices::METALBURST | Choices::COMEUPPANCE => {
-            if defending_side.damage_dealt.move_category != MoveCategory::Status
-                && !defending_side.damage_dealt.hit_substitute
+            if defending_side.get_active().damage_dealt.move_category != MoveCategory::Status
+                && !defending_side.get_active().damage_dealt.hit_substitute
                 && !choice.first_move
             {
                 let damage_amount = cmp::min(
-                    (defending_side.damage_dealt.damage * 3) / 2,
+                    (defending_side.get_active().damage_dealt.damage * 3) / 2,
                     defending_side.get_active_immutable().hp,
                 );
                 if damage_amount > 0 {
                     instructions
                         .instruction_list
-                        .push(Instruction::Damage(DamageInstruction {
-                            side_ref: attacking_side_ref.get_other_side(),
-                            damage_amount: damage_amount,
-                        }));
+                        .push(Instruction::Damage(DamageInstruction::new(
+                            def_pos.side,
+                            def_pos.slot,
+                            damage_amount,
+                        )));
                     defending_side.get_active().hp -= damage_amount;
                 }
             }
@@ -1315,7 +1361,7 @@ pub fn choice_special_effect(
             }
         }
         Choices::REFRESH => {
-            let active_index = attacking_side.active_index;
+            let active_index = attacking_side.active_indices[0];
             let active_pkmn = attacking_side.get_active();
             if active_pkmn.status != PokemonStatus::NONE {
                 add_remove_status_instructions(
@@ -1345,7 +1391,7 @@ pub fn choice_special_effect(
         Choices::REST => {
             let electric_terrain_active = state.terrain_is_active(&Terrain::ELECTRICTERRAIN);
             let attacking_side = state.get_side(attacking_side_ref);
-            let active_index = attacking_side.active_index;
+            let active_index = attacking_side.active_indices[0];
             let active_pkmn = attacking_side.get_active();
             if active_pkmn.status != PokemonStatus::SLEEP && !electric_terrain_active {
                 let heal_amount = active_pkmn.maxhp - active_pkmn.hp;
@@ -1367,10 +1413,11 @@ pub fn choice_special_effect(
                     }));
                 instructions
                     .instruction_list
-                    .push(Instruction::Heal(HealInstruction {
-                        side_ref: *attacking_side_ref,
+                    .push(Instruction::Heal(HealInstruction::new(
+                        *attacking_side_ref,
+                        act_slot,
                         heal_amount,
-                    }));
+                    )));
                 active_pkmn.hp = active_pkmn.maxhp;
                 active_pkmn.status = PokemonStatus::SLEEP;
                 active_pkmn.rest_turns = 3;
@@ -1405,10 +1452,11 @@ pub fn choice_special_effect(
             let target_hp = target_pkmn.hp / 2;
             instructions
                 .instruction_list
-                .push(Instruction::Damage(DamageInstruction {
-                    side_ref: attacking_side_ref.get_other_side(),
-                    damage_amount: target_pkmn.hp - target_hp,
-                }));
+                .push(Instruction::Damage(DamageInstruction::new(
+                    def_pos.side,
+                    def_pos.slot,
+                    target_pkmn.hp - target_hp,
+                )));
             target_pkmn.hp = target_hp;
         }
         Choices::NIGHTSHADE => {
@@ -1422,10 +1470,11 @@ pub fn choice_special_effect(
             let damage_amount = cmp::min(attacker_level as i16, defender_active.hp);
             instructions
                 .instruction_list
-                .push(Instruction::Damage(DamageInstruction {
-                    side_ref: attacking_side_ref.get_other_side(),
-                    damage_amount: damage_amount,
-                }));
+                .push(Instruction::Damage(DamageInstruction::new(
+                    def_pos.side,
+                    def_pos.slot,
+                    damage_amount,
+                )));
             defender_active.hp -= damage_amount;
         }
         Choices::SEISMICTOSS => {
@@ -1439,10 +1488,11 @@ pub fn choice_special_effect(
             let damage_amount = cmp::min(attacker_level as i16, defender_active.hp);
             instructions
                 .instruction_list
-                .push(Instruction::Damage(DamageInstruction {
-                    side_ref: attacking_side_ref.get_other_side(),
-                    damage_amount: damage_amount,
-                }));
+                .push(Instruction::Damage(DamageInstruction::new(
+                    def_pos.side,
+                    def_pos.slot,
+                    damage_amount,
+                )));
             defender_active.hp -= damage_amount;
         }
         Choices::ENDEAVOR => {
@@ -1459,10 +1509,11 @@ pub fn choice_special_effect(
             let damage_amount = defender.hp - attacker.hp;
             instructions
                 .instruction_list
-                .push(Instruction::Damage(DamageInstruction {
-                    side_ref: attacking_side_ref.get_other_side(),
-                    damage_amount: damage_amount,
-                }));
+                .push(Instruction::Damage(DamageInstruction::new(
+                    def_pos.side,
+                    def_pos.slot,
+                    damage_amount,
+                )));
             defender.hp -= damage_amount;
         }
         Choices::FINALGAMBIT => {
@@ -1477,23 +1528,25 @@ pub fn choice_special_effect(
             let damage_amount = attacker.hp;
             instructions
                 .instruction_list
-                .push(Instruction::Damage(DamageInstruction {
-                    side_ref: attacking_side_ref.get_other_side(),
-                    damage_amount: damage_amount,
-                }));
+                .push(Instruction::Damage(DamageInstruction::new(
+                    def_pos.side,
+                    def_pos.slot,
+                    damage_amount,
+                )));
             defender.hp -= damage_amount;
 
             instructions
                 .instruction_list
-                .push(Instruction::Damage(DamageInstruction {
-                    side_ref: *attacking_side_ref,
-                    damage_amount: attacker.hp,
-                }));
+                .push(Instruction::Damage(DamageInstruction::new(
+                    *attacking_side_ref,
+                    act_slot,
+                    attacker.hp,
+                )));
             attacker.hp = 0;
         }
         Choices::PAINSPLIT => {
             if !defending_side
-                .volatile_statuses
+                .get_active().volatile_statuses
                 .contains(&PokemonVolatileStatus::SUBSTITUTE)
             {
                 let target_hp = (attacking_side.get_active_immutable().hp
@@ -1501,16 +1554,18 @@ pub fn choice_special_effect(
                     / 2;
                 instructions
                     .instruction_list
-                    .push(Instruction::Damage(DamageInstruction {
-                        side_ref: *attacking_side_ref,
-                        damage_amount: attacking_side.get_active_immutable().hp - target_hp,
-                    }));
+                    .push(Instruction::Damage(DamageInstruction::new(
+                        *attacking_side_ref,
+                        act_slot,
+                        attacking_side.get_active_immutable().hp - target_hp,
+                    )));
                 instructions
                     .instruction_list
-                    .push(Instruction::Damage(DamageInstruction {
-                        side_ref: attacking_side_ref.get_other_side(),
-                        damage_amount: defending_side.get_active_immutable().hp - target_hp,
-                    }));
+                    .push(Instruction::Damage(DamageInstruction::new(
+                        def_pos.side,
+                        def_pos.slot,
+                        defending_side.get_active_immutable().hp - target_hp,
+                    )));
 
                 attacking_side.get_active().hp = target_hp;
                 defending_side.get_active().hp = target_hp;
@@ -1518,12 +1573,12 @@ pub fn choice_special_effect(
         }
         Choices::SUBSTITUTE | Choices::SHEDTAIL => {
             if attacking_side
-                .volatile_statuses
+                .get_active().volatile_statuses
                 .contains(&PokemonVolatileStatus::SUBSTITUTE)
             {
                 return;
             }
-            let sub_current_health = attacking_side.substitute_health;
+            let sub_current_health = attacking_side.get_active().substitute_health;
             let active_pkmn = attacking_side.get_active();
             let sub_target_health = active_pkmn.maxhp / 4;
             let pkmn_health_reduction = if choice.move_id == Choices::SHEDTAIL {
@@ -1536,24 +1591,27 @@ pub fn choice_special_effect(
                     choice.flags.pivot = true;
                 }
 
-                let damage_instruction = Instruction::Damage(DamageInstruction {
-                    side_ref: attacking_side_ref.clone(),
-                    damage_amount: pkmn_health_reduction,
-                });
+                let damage_instruction = Instruction::Damage(DamageInstruction::new(
+                    *attacking_side_ref,
+                    act_slot,
+                    pkmn_health_reduction,
+                ));
                 let set_sub_health_instruction =
-                    Instruction::ChangeSubstituteHealth(ChangeSubsituteHealthInstruction {
-                        side_ref: attacking_side_ref.clone(),
-                        health_change: sub_target_health - sub_current_health,
-                    });
+                    Instruction::ChangeSubstituteHealth(ChangeSubsituteHealthInstruction::new(
+                        *attacking_side_ref,
+                        act_slot,
+                        sub_target_health - sub_current_health,
+                    ));
                 let apply_vs_instruction =
-                    Instruction::ApplyVolatileStatus(ApplyVolatileStatusInstruction {
-                        side_ref: attacking_side_ref.clone(),
-                        volatile_status: PokemonVolatileStatus::SUBSTITUTE,
-                    });
+                    Instruction::ApplyVolatileStatus(ApplyVolatileStatusInstruction::new(
+                        *attacking_side_ref,
+                        act_slot,
+                        PokemonVolatileStatus::SUBSTITUTE,
+                    ));
                 active_pkmn.hp -= pkmn_health_reduction;
-                attacking_side.substitute_health = sub_target_health;
+                attacking_side.get_active().substitute_health = sub_target_health;
                 attacking_side
-                    .volatile_statuses
+                    .get_active().volatile_statuses
                     .insert(PokemonVolatileStatus::SUBSTITUTE);
                 instructions.instruction_list.push(damage_instruction);
                 instructions
@@ -1569,34 +1627,35 @@ pub fn choice_special_effect(
                 if pkmn.hp != 0
                     && pkmn.ability != Abilities::SOUNDPROOF
                     && !(side
-                        .volatile_statuses
+                        .get_active().volatile_statuses
                         .contains(&PokemonVolatileStatus::PERISH4)
                         || side
-                            .volatile_statuses
+                            .get_active().volatile_statuses
                             .contains(&PokemonVolatileStatus::PERISH3)
                         || side
-                            .volatile_statuses
+                            .get_active().volatile_statuses
                             .contains(&PokemonVolatileStatus::PERISH2)
                         || side
-                            .volatile_statuses
+                            .get_active().volatile_statuses
                             .contains(&PokemonVolatileStatus::PERISH1))
                 {
                     instructions
                         .instruction_list
                         .push(Instruction::ApplyVolatileStatus(
-                            ApplyVolatileStatusInstruction {
-                                side_ref: side_ref,
-                                volatile_status: PokemonVolatileStatus::PERISH4,
-                            },
+                            ApplyVolatileStatusInstruction::new(
+                                side_ref,
+                                0, // FIXME(doubles): slot - absolute per-side loop, per-active in doubles
+                                PokemonVolatileStatus::PERISH4,
+                            ),
                         ));
-                    side.volatile_statuses
+                    side.get_active().volatile_statuses
                         .insert(PokemonVolatileStatus::PERISH4);
                 }
             }
         }
         Choices::TRICK | Choices::SWITCHEROO => {
             let defender_has_sub = defending_side
-                .volatile_statuses
+                .get_active().volatile_statuses
                 .contains(&PokemonVolatileStatus::SUBSTITUTE);
             let attacker = attacking_side.get_active();
             let defender = defending_side.get_active();
@@ -1606,16 +1665,18 @@ pub fn choice_special_effect(
             {
                 return;
             }
-            let change_attacker_item_instruction = Instruction::ChangeItem(ChangeItemInstruction {
-                side_ref: *attacking_side_ref,
-                current_item: attacker_item,
-                new_item: defender_item,
-            });
-            let change_defender_item_instruction = Instruction::ChangeItem(ChangeItemInstruction {
-                side_ref: attacking_side_ref.get_other_side(),
-                current_item: defender_item,
-                new_item: attacker_item,
-            });
+            let change_attacker_item_instruction = Instruction::ChangeItem(ChangeItemInstruction::new(
+                *attacking_side_ref,
+                act_slot,
+                attacker_item,
+                defender_item,
+            ));
+            let change_defender_item_instruction = Instruction::ChangeItem(ChangeItemInstruction::new(
+                def_pos.side,
+                def_pos.slot,
+                defender_item,
+                attacker_item,
+            ));
             attacker.item = defender_item;
             defender.item = attacker_item;
             instructions

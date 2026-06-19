@@ -1,11 +1,16 @@
 # Poke Engine
 
-An engine for searching through Pokémon battles (singles only).
+An engine for searching through Pokémon battles.
 
 **This is not a perfect engine**
 
-This battle engine is meant to capture important aspects of Pokémon for the purposes of competitive single battles.
-It is nowhere near as complete or robust as the [PokemonShowdown](https://github.com/smogon/pokemon-showdown) battle engine.
+This battle engine is meant to capture important aspects of Pokémon for the purposes of competitive battles.
+It supports both **singles** (1 active per side) and, when built with the `doubles` feature, **doubles**
+(2 active per side, gen4-9). It is nowhere near as complete or robust as the
+[PokemonShowdown](https://github.com/smogon/pokemon-showdown) battle engine.
+
+For doubles, Monte Carlo Tree Search is the recommended engine: the expectiminimax payoff matrix is the
+cartesian product of each side's per-slot actions (hundreds × hundreds), so its default search depth is kept low.
 
 ## Links
 
@@ -34,7 +39,19 @@ Run with
 ./target/release/poke-engine
 ```
 
-Generations 4 through 8 are available
+Generations 1 through 9 are available.
+
+#### Doubles
+
+To build with doubles support (2 active Pokemon per side), add the `doubles` feature on top of a
+gen4-9 generation feature. The Makefile exposes ready-made targets:
+
+```shell
+make gen9-doubles   # also: gen4-doubles, gen8-doubles, tera-doubles
+```
+
+The same subcommands work in a doubles build; the only difference is how a side's move is expressed
+(see [Doubles move syntax](#doubles-move-syntax) below).
 
 ### Usage
 
@@ -163,6 +180,26 @@ Available commands:
 | **exit/quit**                                         |     q     | Quit interactive mode                                                                                         |
 
 
+### Doubles move syntax
+
+In a singles build a side's move is a single token, e.g. `thunderbolt` or `switch tyranitar`.
+
+In a doubles build a side picks one sub-action **per active slot**. A combined side action is the
+per-slot sub-actions joined with `;` (slot 0 first, then slot 1). Each sub-action may be suffixed with
+`,<slot>` to choose which opposing slot it targets (defaulting to slot 0 / the directly-opposing foe):
+
+```
+poke-engine generate-instructions --state <state-string> -o "thunderbolt,1;protect" -t "earthquake;helpinghand"
+```
+
+* `thunderbolt,1` — slot 0 uses Thunderbolt aimed at the opposing slot 1.
+* `protect` — slot 1 uses Protect (no target needed).
+* A missing or `none` sub-action means that slot does nothing this turn (e.g. `closecombat;none`).
+* Spread moves (Earthquake, Rock Slide, …) ignore the `,<slot>` suffix and hit all their legal targets,
+  with the usual 0.75× spread damage reduction when they hit more than one Pokémon.
+
+Search results (MCTS / expectiminimax) print each side's options in the same `slot0;slot1` form.
+
 ### State Representation
 
 When running directly, the engine parses the state of the game from a string.
@@ -170,3 +207,16 @@ When running directly, the engine parses the state of the game from a string.
 Properly representing the state of a Pokémon battle gets really complicated.
 See the doctest for `State::deserialize` in [state.rs](src/state.rs)
 for the source of truth on how to parse a state string.
+
+#### Doubles state format
+
+A doubles state string is the singles format with extra `=`-separated tokens appended to each side, so a
+singles-format string still loads in a doubles build (the second active slot defaults). After the 29
+singles side-tokens, a doubles side appends, in order: the slot-1 active index, then slot-1's per-active
+state (volatile statuses, volatile-status durations, substitute health, the seven stat boosts, and
+`last_used_move`), and finally the two per-slot force-switch flags joined by `:` as a single token.
+
+Per-active battle state (boosts, volatile statuses, substitute, `last_used_move`, `damage_dealt`) lives on
+each `Pokemon` rather than on the `Side`, so each of the two actives carries its own. This is also reflected
+in the Python bindings: `Side.active_indices` is a list (length 2 in doubles), and those per-active fields
+are read/written on `Pokemon`.

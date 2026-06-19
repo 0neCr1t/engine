@@ -1,4 +1,8 @@
-#![cfg(not(any(feature = "gen1", feature = "gen2", feature = "gen3")))]
+// Singles behavior suite (see tests/test_battle_mechanics.rs): genx singles only.
+#![cfg(all(
+    not(any(feature = "gen1", feature = "gen2", feature = "gen3")),
+    not(feature = "doubles")
+))]
 
 use poke_engine::choices::{Choices, MoveCategory};
 use poke_engine::engine::generate_instructions::generate_instructions_from_move_pair;
@@ -8,13 +12,13 @@ use poke_engine::instruction::{
     DamageInstruction, Instruction, RemoveVolatileStatusInstruction, StateInstructions,
     ToggleDamageDealtHitSubstituteInstruction,
 };
-use poke_engine::state::{PokemonMoveIndex, PokemonType, SideReference, State};
+use poke_engine::state::{BattlePosition, PokemonMoveIndex, PokemonType, SideReference, State};
 
 #[test]
 fn test_previous_damage_dealt_resets_and_then_goes_to_a_new_value() {
     let mut state = State::default();
     state.use_damage_dealt = true;
-    state.side_two.damage_dealt.damage = 10;
+    state.side_two.get_active().damage_dealt.damage = 10;
 
     state
         .side_one
@@ -27,8 +31,8 @@ fn test_previous_damage_dealt_resets_and_then_goes_to_a_new_value() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -72,8 +76,8 @@ fn test_counter_after_physical_hit() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -114,8 +118,8 @@ fn test_counter_cannot_hit_ghost_type() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -152,8 +156,8 @@ fn test_counter_reflects_special_hiddenpower() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -196,8 +200,8 @@ fn test_mirrorcoat_does_not_reflect_special_hiddenpower() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -235,8 +239,8 @@ fn test_metalburst_after_physical_move() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -276,8 +280,8 @@ fn test_comeuppance_after_physical_move() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -317,8 +321,8 @@ fn test_metalburst_after_special_move() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -362,14 +366,14 @@ fn test_metalburst_after_substitute_being_hit() {
         .replace_move(PokemonMoveIndex::M0, Choices::TACKLE);
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_one.substitute_health = 5;
+    state.side_one.get_active().substitute_health = 5;
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -416,8 +420,8 @@ fn test_metalburst_fails_moving_first() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -453,8 +457,8 @@ fn test_metalburst_after_status_move() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -481,8 +485,8 @@ fn test_counter_after_special_hit() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -523,8 +527,8 @@ fn test_mirrorcoat_after_special_hit() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -569,8 +573,8 @@ fn test_mirrorcoat_after_physical_hit() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -607,8 +611,8 @@ fn test_focuspunch_after_getting_hit() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -634,9 +638,9 @@ fn test_focuspunch_after_substitute_getting_hit() {
     state.use_damage_dealt = true;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_one.substitute_health = 1;
+    state.side_one.get_active().substitute_health = 1;
 
     state
         .side_one
@@ -649,8 +653,8 @@ fn test_focuspunch_after_substitute_getting_hit() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 
@@ -703,8 +707,8 @@ fn test_focuspunch_after_status_move() {
 
     let vec_of_instructions = generate_instructions_from_move_pair(
         &mut state,
-        &MoveChoice::Move(PokemonMoveIndex::M0),
-        &MoveChoice::Move(PokemonMoveIndex::M0),
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
+        &MoveChoice::Move { move_index: PokemonMoveIndex::M0, target: BattlePosition::new(SideReference::SideTwo, 0) },
         false,
     );
 

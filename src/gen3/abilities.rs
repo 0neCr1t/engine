@@ -162,7 +162,7 @@ pub fn ability_on_switch_out(
                     .instruction_list
                     .push(Instruction::ChangeStatus(ChangeStatusInstruction {
                         side_ref: *side_ref,
-                        pokemon_index: attacking_side.active_index,
+                        pokemon_index: attacking_side.active_indices[0],
                         old_status: status,
                         new_status: PokemonStatus::NONE,
                     }));
@@ -193,13 +193,13 @@ pub fn ability_end_of_turn(
     let active_pkmn = attacking_side.get_active();
     match active_pkmn.ability {
         Abilities::SPEEDBOOST => {
-            if attacking_side.speed_boost < 6 {
+            if attacking_side.get_active().speed_boost < 6 {
                 let ins = Instruction::Boost(BoostInstruction {
                     side_ref: side_ref.clone(),
                     stat: PokemonBoostableStat::Speed,
                     amount: 1,
                 });
-                attacking_side.speed_boost += 1;
+                attacking_side.get_active().speed_boost += 1;
                 instructions.instruction_list.push(ins);
             }
         }
@@ -239,7 +239,7 @@ pub fn ability_end_of_turn(
         Abilities::SHEDSKIN => {
             if active_pkmn.status != PokemonStatus::NONE {
                 let attacking_side = state.get_side(side_ref);
-                let active_index = attacking_side.active_index;
+                let active_index = attacking_side.active_indices[0];
                 let active_pkmn = attacking_side.get_active();
 
                 add_remove_status_instructions(
@@ -521,7 +521,7 @@ pub fn ability_modify_attack_against(
         }
         Abilities::LEVITATE => {
             if attacker_choice.move_type == PokemonType::GROUND
-                && attacker_choice.target == MoveTarget::Opponent
+                && attacker_choice.target.targets_opponent_side()
                 && attacker_choice.move_id != Choices::THOUSANDARROWS
             {
                 attacker_choice.base_power = 0.0;

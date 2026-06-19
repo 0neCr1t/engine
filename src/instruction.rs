@@ -8,6 +8,43 @@ use crate::state::{
 use std::fmt;
 use std::fmt::Formatter;
 
+/// Generates a `new(side_ref, slot, ..fields)` constructor and a `slot()`
+/// accessor for a per-active instruction struct. In a `doubles` build the
+/// struct carries a `slot: u8` (which active on the side it targets); in a
+/// singles build the `slot` parameter is ignored and `slot()` is always 0, so
+/// behavior and the in-memory layout stay bit-for-bit identical to before.
+///
+/// The matching struct definition must declare the field as:
+/// `#[cfg(feature = "doubles")] pub slot: u8,`
+macro_rules! slotted_instruction {
+    ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {
+        impl $name {
+            #[allow(clippy::too_many_arguments)]
+            #[inline]
+            pub fn new(side_ref: SideReference, slot: u8, $($field: $ty),*) -> Self {
+                #[cfg(not(feature = "doubles"))]
+                let _ = slot;
+                Self {
+                    side_ref,
+                    $($field,)*
+                    #[cfg(feature = "doubles")]
+                    slot,
+                }
+            }
+            #[cfg(feature = "doubles")]
+            #[inline]
+            pub fn slot(&self) -> u8 {
+                self.slot
+            }
+            #[cfg(not(feature = "doubles"))]
+            #[inline]
+            pub fn slot(&self) -> u8 {
+                0
+            }
+        }
+    };
+}
+
 #[derive(PartialEq, Clone)]
 pub struct StateInstructions {
     pub percentage: f32,
@@ -88,6 +125,16 @@ pub enum Instruction {
     DecrementTrickRoomTurnsRemaining,
     ToggleSideOneForceSwitch,
     ToggleSideTwoForceSwitch,
+    /// Per-slot forced switch toggle (doubles only). The per-side
+    /// `ToggleSide{One,Two}ForceSwitch` instructions remain the singles
+    /// mechanism; in doubles this records that a specific active slot must be
+    /// replaced. apply == reverse (it is a toggle).
+    #[cfg(feature = "doubles")]
+    ToggleForceSwitchSlot(ToggleForceSwitchSlotInstruction),
+    /// Ally Switch (doubles only): swap which Pokemon occupy slot 0 and slot 1 on
+    /// a side. apply == reverse (it is an involution on `active_indices`).
+    #[cfg(feature = "doubles")]
+    SwapActiveSlots(SwapActiveSlotsInstruction),
     ToggleTerastallized(ToggleTerastallizedInstruction),
 }
 
@@ -332,6 +379,18 @@ impl fmt::Debug for Instruction {
             Instruction::ToggleSideTwoForceSwitch => {
                 write!(f, "ToggleSideTwoForceSwitch")
             }
+            #[cfg(feature = "doubles")]
+            Instruction::ToggleForceSwitchSlot(instruction) => {
+                write!(
+                    f,
+                    "ToggleForceSwitchSlot({:?}, {})",
+                    instruction.side_ref, instruction.slot
+                )
+            }
+            #[cfg(feature = "doubles")]
+            Instruction::SwapActiveSlots(instruction) => {
+                write!(f, "SwapActiveSlots({:?})", instruction.side_ref)
+            }
         }
     }
 }
@@ -340,6 +399,8 @@ impl fmt::Debug for Instruction {
 pub struct ChangeDamageDealtDamageInstruction {
     pub side_ref: SideReference,
     pub damage_change: i16,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -347,11 +408,15 @@ pub struct ChangeDamageDealtMoveCategoryInstruction {
     pub side_ref: SideReference,
     pub move_category: MoveCategory,
     pub previous_move_category: MoveCategory,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ToggleDamageDealtHitSubstituteInstruction {
     pub side_ref: SideReference,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -359,6 +424,8 @@ pub struct DecrementPPInstruction {
     pub side_ref: SideReference,
     pub move_index: PokemonMoveIndex,
     pub amount: i8,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -366,6 +433,8 @@ pub struct SetLastUsedMoveInstruction {
     pub side_ref: SideReference,
     pub last_used_move: LastUsedMove,
     pub previous_last_used_move: LastUsedMove,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -424,12 +493,16 @@ pub struct DecrementFutureSightInstruction {
 pub struct EnableMoveInstruction {
     pub side_ref: SideReference,
     pub move_index: PokemonMoveIndex,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct DisableMoveInstruction {
     pub side_ref: SideReference,
     pub move_index: PokemonMoveIndex,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -437,30 +510,40 @@ pub struct ChangeItemInstruction {
     pub side_ref: SideReference,
     pub current_item: Items,
     pub new_item: Items,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ChangeStatInstruction {
     pub side_ref: SideReference,
     pub amount: i16,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct HealInstruction {
     pub side_ref: SideReference,
     pub heal_amount: i16,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct DamageInstruction {
     pub side_ref: SideReference,
     pub damage_amount: i16,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ChangeSubsituteHealthInstruction {
     pub side_ref: SideReference,
     pub health_change: i16,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -470,6 +553,8 @@ pub struct FormeChangeInstruction {
     // PokemonName is represented as i16
     // This is the amount the name has changed by
     pub name_change: i16,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -493,12 +578,16 @@ pub struct ChangeStatusInstruction {
 pub struct ApplyVolatileStatusInstruction {
     pub side_ref: SideReference,
     pub volatile_status: PokemonVolatileStatus,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct RemoveVolatileStatusInstruction {
     pub side_ref: SideReference,
     pub volatile_status: PokemonVolatileStatus,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -506,6 +595,8 @@ pub struct BoostInstruction {
     pub side_ref: SideReference,
     pub stat: PokemonBoostableStat,
     pub amount: i8,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -520,6 +611,8 @@ pub struct ChangeVolatileStatusDurationInstruction {
     pub side_ref: SideReference,
     pub volatile_status: PokemonVolatileStatus,
     pub amount: i8,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -550,11 +643,26 @@ pub struct ToggleTerastallizedInstruction {
     pub side_ref: SideReference,
 }
 
+#[cfg(feature = "doubles")]
+#[derive(Debug, PartialEq, Clone)]
+pub struct ToggleForceSwitchSlotInstruction {
+    pub side_ref: SideReference,
+    pub slot: u8,
+}
+
+#[cfg(feature = "doubles")]
+#[derive(Debug, PartialEq, Clone)]
+pub struct SwapActiveSlotsInstruction {
+    pub side_ref: SideReference,
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct ChangeType {
     pub side_ref: SideReference,
     pub new_types: (PokemonType, PokemonType),
     pub old_types: (PokemonType, PokemonType),
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -564,16 +672,77 @@ pub struct ChangeAbilityInstruction {
     // Abilities enum is an i16
     // This is the amount the ability has changed by
     pub ability_change: i16,
+    #[cfg(feature = "doubles")]
+    pub slot: u8,
 }
+
+slotted_instruction!(ChangeDamageDealtDamageInstruction { damage_change: i16 });
+slotted_instruction!(ChangeDamageDealtMoveCategoryInstruction {
+    move_category: MoveCategory,
+    previous_move_category: MoveCategory
+});
+slotted_instruction!(ToggleDamageDealtHitSubstituteInstruction {});
+slotted_instruction!(DecrementPPInstruction {
+    move_index: PokemonMoveIndex,
+    amount: i8
+});
+slotted_instruction!(SetLastUsedMoveInstruction {
+    last_used_move: LastUsedMove,
+    previous_last_used_move: LastUsedMove
+});
+slotted_instruction!(EnableMoveInstruction {
+    move_index: PokemonMoveIndex
+});
+slotted_instruction!(DisableMoveInstruction {
+    move_index: PokemonMoveIndex
+});
+slotted_instruction!(ChangeItemInstruction {
+    current_item: Items,
+    new_item: Items
+});
+slotted_instruction!(ChangeStatInstruction { amount: i16 });
+slotted_instruction!(HealInstruction { heal_amount: i16 });
+slotted_instruction!(DamageInstruction { damage_amount: i16 });
+slotted_instruction!(ChangeSubsituteHealthInstruction { health_change: i16 });
+slotted_instruction!(FormeChangeInstruction { name_change: i16 });
+slotted_instruction!(ApplyVolatileStatusInstruction {
+    volatile_status: PokemonVolatileStatus
+});
+slotted_instruction!(RemoveVolatileStatusInstruction {
+    volatile_status: PokemonVolatileStatus
+});
+slotted_instruction!(BoostInstruction {
+    stat: PokemonBoostableStat,
+    amount: i8
+});
+slotted_instruction!(ChangeVolatileStatusDurationInstruction {
+    volatile_status: PokemonVolatileStatus,
+    amount: i8
+});
+slotted_instruction!(ChangeType {
+    new_types: (PokemonType, PokemonType),
+    old_types: (PokemonType, PokemonType)
+});
+slotted_instruction!(ChangeAbilityInstruction { ability_change: i16 });
 
 #[cfg(test)]
 mod test {
     use super::Instruction;
 
-    // Make sure that the size of the Instruction enum doesn't change
+    // Make sure that the size of the Instruction enum doesn't change.
+    // In a `doubles` build the per-active instructions carry an extra `slot: u8`,
+    // which widens the largest variants by 2 bytes (with padding).
     #[test]
+    #[cfg(not(feature = "doubles"))]
     fn test_instruction_size() {
         assert_eq!(size_of::<Instruction>(), 6);
+        assert_eq!(align_of::<Instruction>(), 2);
+    }
+
+    #[test]
+    #[cfg(feature = "doubles")]
+    fn test_instruction_size() {
+        assert_eq!(size_of::<Instruction>(), 8);
         assert_eq!(align_of::<Instruction>(), 2);
     }
 }

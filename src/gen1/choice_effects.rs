@@ -81,12 +81,12 @@ pub fn choice_special_effect(
     let (attacking_side, defending_side) = state.get_both_sides(attacking_side_ref);
     match choice.move_id {
         Choices::COUNTER => {
-            if defending_side.damage_dealt.damage > 0
+            if defending_side.get_active().damage_dealt.damage > 0
                 && (defender_choice.move_type == PokemonType::FIGHTING
                     || defender_choice.move_type == PokemonType::NORMAL)
             {
                 let damage_amount = cmp::min(
-                    defending_side.damage_dealt.damage * 2,
+                    defending_side.get_active().damage_dealt.damage * 2,
                     defending_side.get_active_immutable().hp,
                 );
                 if damage_amount > 0 {
@@ -106,7 +106,7 @@ pub fn choice_special_effect(
         }
         // Gen1 Rest lasts 1 turn less (2 turns versus 3) because you cannot attack on the turn you wake up
         Choices::REST => {
-            let active_index = attacking_side.active_index;
+            let active_index = attacking_side.active_indices[0];
             let active_pkmn = attacking_side.get_active();
             if active_pkmn.status != PokemonStatus::SLEEP {
                 let heal_amount = active_pkmn.maxhp - active_pkmn.hp;
@@ -153,12 +153,12 @@ pub fn choice_special_effect(
         }
         Choices::SUBSTITUTE => {
             if attacking_side
-                .volatile_statuses
+                .get_active().volatile_statuses
                 .contains(&PokemonVolatileStatus::SUBSTITUTE)
             {
                 return;
             }
-            let sub_current_health = attacking_side.substitute_health;
+            let sub_current_health = attacking_side.get_active().substitute_health;
             let active_pkmn = attacking_side.get_active();
             let sub_target_health = active_pkmn.maxhp / 4;
             if active_pkmn.hp > sub_target_health {
@@ -177,9 +177,9 @@ pub fn choice_special_effect(
                         volatile_status: PokemonVolatileStatus::SUBSTITUTE,
                     });
                 active_pkmn.hp -= sub_target_health;
-                attacking_side.substitute_health = sub_target_health;
+                attacking_side.get_active().substitute_health = sub_target_health;
                 attacking_side
-                    .volatile_statuses
+                    .get_active().volatile_statuses
                     .insert(PokemonVolatileStatus::SUBSTITUTE);
                 instructions.instruction_list.push(damage_instruction);
                 instructions
@@ -209,7 +209,7 @@ pub fn choice_after_damage_hit(
         });
         instructions.instruction_list.push(instruction);
         attacking_side
-            .volatile_statuses
+            .get_active().volatile_statuses
             .insert(PokemonVolatileStatus::MUSTRECHARGE);
     }
 }

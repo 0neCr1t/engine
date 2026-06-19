@@ -206,7 +206,7 @@ fn lum_berry(
     attacking_side: &mut Side,
     instructions: &mut StateInstructions,
 ) {
-    let active_index = attacking_side.active_index;
+    let active_index = attacking_side.active_indices[0];
     let active_pkmn = attacking_side.get_active();
     instructions
         .instruction_list
@@ -256,7 +256,7 @@ fn chesto_berry(
     attacking_side: &mut Side,
     instructions: &mut StateInstructions,
 ) {
-    let active_index = attacking_side.active_index;
+    let active_index = attacking_side.active_indices[0];
     let active_pkmn = attacking_side.get_active();
     instructions
         .instruction_list

@@ -1,6 +1,5 @@
+use crate::decision::{self, SideChoice};
 use crate::engine::evaluate::evaluate;
-use crate::engine::generate_instructions::generate_instructions_from_move_pair;
-use crate::engine::state::MoveChoice;
 use crate::instruction::StateInstructions;
 use crate::mcts::{MctsResult, MctsSideResult};
 use crate::state::State;
@@ -28,13 +27,13 @@ fn sigmoid(x: f32) -> f32 {
 }
 
 pub struct MoveNode {
-    move_choice: MoveChoice,
+    move_choice: SideChoice,
     total_score: AtomicU32,
     visits: AtomicU32,
 }
 
 impl MoveNode {
-    fn new(move_choice: MoveChoice) -> Self {
+    fn new(move_choice: SideChoice) -> Self {
         Self {
             move_choice,
             total_score: AtomicU32::new(0),
@@ -77,7 +76,7 @@ pub struct SharedNodeOptions {
 }
 
 impl SharedNodeOptions {
-    fn new(s1_options: Vec<MoveChoice>, s2_options: Vec<MoveChoice>) -> Self {
+    fn new(s1_options: Vec<SideChoice>, s2_options: Vec<SideChoice>) -> Self {
         Self {
             s1: s1_options.into_iter().map(MoveNode::new).collect(),
             s2: s2_options.into_iter().map(MoveNode::new).collect(),
@@ -123,7 +122,7 @@ pub struct Node {
 }
 
 impl Node {
-    fn new_root(s1_options: Vec<MoveChoice>, s2_options: Vec<MoveChoice>) -> Arc<Self> {
+    fn new_root(s1_options: Vec<SideChoice>, s2_options: Vec<SideChoice>) -> Arc<Self> {
         let node = Arc::new(Self {
             root: true,
             instructions: StateInstructions::default(),
@@ -155,7 +154,7 @@ impl Node {
 
     fn ensure_options(&self, state: &State) -> &SharedNodeOptions {
         self.options.get_or_init(|| {
-            let (s1, s2) = state.get_all_options();
+            let (s1, s2) = decision::get_all_options(state);
             SharedNodeOptions::new(s1, s2)
         })
     }
@@ -254,14 +253,14 @@ impl Node {
         let s2_move = &options.s2[s2_index].move_choice;
 
         if (state.battle_is_over() != 0.0 && !self.root)
-            || (s1_move == &MoveChoice::None && s2_move == &MoveChoice::None)
+            || (decision::is_none_action(s1_move) && decision::is_none_action(s2_move))
         {
             return None;
         }
 
         let should_branch_on_damage = self.depth < MCTS_DAMAGE_BRANCH_DEPTH;
         let instructions =
-            generate_instructions_from_move_pair(state, s1_move, s2_move, should_branch_on_damage);
+            decision::generate_instructions(state, s1_move, s2_move, should_branch_on_damage);
 
         let mut total_weight = 0.0f32;
         let nodes = instructions
@@ -414,8 +413,8 @@ fn run_mcts_loop(
 
 pub fn perform_mcts_shared_tree(
     state: &mut State,
-    side_one_options: Vec<MoveChoice>,
-    side_two_options: Vec<MoveChoice>,
+    side_one_options: Vec<SideChoice>,
+    side_two_options: Vec<SideChoice>,
     max_time: Duration,
     max_iterations: u32,
     worker_count: usize,

@@ -42,7 +42,7 @@ pub fn modify_choice(
                 attacker_choice.base_power = 200.0;
             }
         }
-        Choices::FAKEOUT => match attacking_side.last_used_move {
+        Choices::FAKEOUT => match attacking_side.get_active_immutable().last_used_move {
             LastUsedMove::Move(_) => attacker_choice.remove_all_effects(),
             _ => {}
         },
@@ -135,10 +135,10 @@ pub fn modify_choice(
             }
         }
         Choices::FOCUSPUNCH => {
-            if (defending_side.damage_dealt.move_category == MoveCategory::Physical
-                || defending_side.damage_dealt.move_category == MoveCategory::Special)
-                && !defending_side.damage_dealt.hit_substitute
-                && defending_side.damage_dealt.damage > 0
+            if (defending_side.get_active_immutable().damage_dealt.move_category == MoveCategory::Physical
+                || defending_side.get_active_immutable().damage_dealt.move_category == MoveCategory::Special)
+                && !defending_side.get_active_immutable().damage_dealt.hit_substitute
+                && defending_side.get_active_immutable().damage_dealt.damage > 0
             {
                 attacker_choice.remove_all_effects();
             }
@@ -189,7 +189,7 @@ pub fn choice_after_damage_hit(
         });
         instructions.instruction_list.push(instruction);
         attacking_side
-            .volatile_statuses
+            .get_active().volatile_statuses
             .insert(PokemonVolatileStatus::MUSTRECHARGE);
 
     // Recharging and truant are mutually exclusive, with recharge taking priority
@@ -200,7 +200,7 @@ pub fn choice_after_damage_hit(
         });
         instructions.instruction_list.push(instruction);
         attacking_side
-            .volatile_statuses
+            .get_active().volatile_statuses
             .insert(PokemonVolatileStatus::TRUANT);
     }
     match choice.move_id {
@@ -260,7 +260,7 @@ fn destinybond_before_move(
     // destinybond is preserved, even if used twice in a row
     if choice.move_id != Choices::DESTINYBOND
         && attacking_side
-            .volatile_statuses
+            .get_active().volatile_statuses
             .contains(&PokemonVolatileStatus::DESTINYBOND)
     {
         instructions
@@ -272,7 +272,7 @@ fn destinybond_before_move(
                 },
             ));
         attacking_side
-            .volatile_statuses
+            .get_active().volatile_statuses
             .remove(&PokemonVolatileStatus::DESTINYBOND);
     }
 }
@@ -298,10 +298,10 @@ pub fn choice_before_move(
                     .instruction_list
                     .push(Instruction::SetFutureSight(SetFutureSightInstruction {
                         side_ref: *attacking_side_ref,
-                        pokemon_index: attacking_side.active_index,
+                        pokemon_index: attacking_side.active_indices[0],
                         previous_pokemon_index: attacking_side.future_sight.1,
                     }));
-                attacking_side.future_sight = (3, attacking_side.active_index);
+                attacking_side.future_sight = (3, attacking_side.active_indices[0]);
             }
         }
         Choices::EXPLOSION | Choices::SELFDESTRUCT if defender.ability != Abilities::DAMP => {
@@ -403,7 +403,7 @@ pub fn choice_special_effect(
     let (attacking_side, defending_side) = state.get_both_sides(attacking_side_ref);
     match choice.move_id {
         Choices::BELLYDRUM => {
-            let boost_amount = 6 - attacking_side.attack_boost;
+            let boost_amount = 6 - attacking_side.get_active().attack_boost;
             let attacker = attacking_side.get_active();
             if attacker.hp > attacker.maxhp / 2 {
                 instructions
@@ -420,17 +420,17 @@ pub fn choice_special_effect(
                         amount: boost_amount,
                     }));
                 attacker.hp -= attacker.maxhp / 2;
-                attacking_side.attack_boost = 6;
+                attacking_side.get_active().attack_boost = 6;
             }
         }
         Choices::COUNTER => {
-            if defending_side.damage_dealt.move_category == MoveCategory::Physical
+            if defending_side.get_active().damage_dealt.move_category == MoveCategory::Physical
                 && !defending_side
                     .get_active_immutable()
                     .has_type(&PokemonType::GHOST)
             {
                 let damage_amount = cmp::min(
-                    defending_side.damage_dealt.damage * 2,
+                    defending_side.get_active().damage_dealt.damage * 2,
                     defending_side.get_active_immutable().hp,
                 );
                 if damage_amount > 0 {
@@ -445,13 +445,13 @@ pub fn choice_special_effect(
             }
         }
         Choices::MIRRORCOAT => {
-            if defending_side.damage_dealt.move_category == MoveCategory::Special
+            if defending_side.get_active().damage_dealt.move_category == MoveCategory::Special
                 && !defending_side
                     .get_active_immutable()
                     .has_type(&PokemonType::DARK)
             {
                 let damage_amount = cmp::min(
-                    defending_side.damage_dealt.damage * 2,
+                    defending_side.get_active().damage_dealt.damage * 2,
                     defending_side.get_active_immutable().hp,
                 );
                 if damage_amount > 0 {
@@ -479,7 +479,7 @@ pub fn choice_special_effect(
             }
         }
         Choices::REFRESH => {
-            let active_index = attacking_side.active_index;
+            let active_index = attacking_side.active_indices[0];
             let active_pkmn = attacking_side.get_active();
             if active_pkmn.status != PokemonStatus::NONE {
                 add_remove_status_instructions(
@@ -507,7 +507,7 @@ pub fn choice_special_effect(
             state.reset_boosts(&SideReference::SideTwo, &mut instructions.instruction_list);
         }
         Choices::REST => {
-            let active_index = attacking_side.active_index;
+            let active_index = attacking_side.active_indices[0];
             let active_pkmn = attacking_side.get_active();
             if active_pkmn.status != PokemonStatus::SLEEP {
                 let heal_amount = active_pkmn.maxhp - active_pkmn.hp;
@@ -596,7 +596,7 @@ pub fn choice_special_effect(
         }
         Choices::PAINSPLIT => {
             if !defending_side
-                .volatile_statuses
+                .get_active().volatile_statuses
                 .contains(&PokemonVolatileStatus::SUBSTITUTE)
             {
                 let target_hp = (attacking_side.get_active_immutable().hp
@@ -621,12 +621,12 @@ pub fn choice_special_effect(
         }
         Choices::SUBSTITUTE => {
             if attacking_side
-                .volatile_statuses
+                .get_active().volatile_statuses
                 .contains(&PokemonVolatileStatus::SUBSTITUTE)
             {
                 return;
             }
-            let sub_current_health = attacking_side.substitute_health;
+            let sub_current_health = attacking_side.get_active().substitute_health;
             let active_pkmn = attacking_side.get_active();
             let sub_target_health = active_pkmn.maxhp / 4;
             let pkmn_health_reduction = if choice.move_id == Choices::SHEDTAIL {
@@ -654,9 +654,9 @@ pub fn choice_special_effect(
                         volatile_status: PokemonVolatileStatus::SUBSTITUTE,
                     });
                 active_pkmn.hp -= pkmn_health_reduction;
-                attacking_side.substitute_health = sub_target_health;
+                attacking_side.get_active().substitute_health = sub_target_health;
                 attacking_side
-                    .volatile_statuses
+                    .get_active().volatile_statuses
                     .insert(PokemonVolatileStatus::SUBSTITUTE);
                 instructions.instruction_list.push(damage_instruction);
                 instructions
@@ -672,16 +672,16 @@ pub fn choice_special_effect(
                 if pkmn.hp != 0
                     && pkmn.ability != Abilities::SOUNDPROOF
                     && !(side
-                        .volatile_statuses
+                        .get_active().volatile_statuses
                         .contains(&PokemonVolatileStatus::PERISH4)
                         || side
-                            .volatile_statuses
+                            .get_active().volatile_statuses
                             .contains(&PokemonVolatileStatus::PERISH3)
                         || side
-                            .volatile_statuses
+                            .get_active().volatile_statuses
                             .contains(&PokemonVolatileStatus::PERISH2)
                         || side
-                            .volatile_statuses
+                            .get_active().volatile_statuses
                             .contains(&PokemonVolatileStatus::PERISH1))
                 {
                     instructions
@@ -692,14 +692,14 @@ pub fn choice_special_effect(
                                 volatile_status: PokemonVolatileStatus::PERISH4,
                             },
                         ));
-                    side.volatile_statuses
+                    side.get_active().volatile_statuses
                         .insert(PokemonVolatileStatus::PERISH4);
                 }
             }
         }
         Choices::TRICK => {
             let defender_has_sub = defending_side
-                .volatile_statuses
+                .get_active().volatile_statuses
                 .contains(&PokemonVolatileStatus::SUBSTITUTE);
             let attacker = attacking_side.get_active();
             let defender = defending_side.get_active();

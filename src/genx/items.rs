@@ -266,10 +266,11 @@ pub fn get_choice_move_disable_instructions(
     let mut iter = pkmn.moves.into_iter();
     while let Some(p) = iter.next() {
         if &p.id != move_name && p.disabled == false {
-            moves_to_disable.push(Instruction::DisableMove(DisableMoveInstruction {
-                side_ref: *side_ref,
-                move_index: iter.pokemon_move_index,
-            }));
+            moves_to_disable.push(Instruction::DisableMove(DisableMoveInstruction::new(
+                *side_ref,
+                0, // FIXME(doubles): slot (no State access in this fn)
+                iter.pokemon_move_index,
+            )));
         }
     }
     moves_to_disable
@@ -288,11 +289,12 @@ fn damage_reduction_berry(
     {
         instructions
             .instruction_list
-            .push(Instruction::ChangeItem(ChangeItemInstruction {
-                side_ref: attacking_side_ref.get_other_side(),
-                current_item: berry,
-                new_item: Items::NONE,
-            }));
+            .push(Instruction::ChangeItem(ChangeItemInstruction::new(
+                attacking_side_ref.get_other_side(),
+                0, // FIXME(doubles): slot (no State access in this fn)
+                berry,
+                Items::NONE,
+            )));
         defending_pkmn.item = Items::NONE;
         choice.base_power /= 2.0;
     }
@@ -320,11 +322,12 @@ fn power_up_gem(
 
         instructions
             .instruction_list
-            .push(Instruction::ChangeItem(ChangeItemInstruction {
-                side_ref: *attacking_side_ref,
-                current_item: attacking_pkmn.item,
-                new_item: Items::NONE,
-            }));
+            .push(Instruction::ChangeItem(ChangeItemInstruction::new(
+                *attacking_side_ref,
+                0, // FIXME(doubles): slot (no State access in this fn)
+                attacking_pkmn.item,
+                Items::NONE,
+            )));
         attacking_pkmn.item = Items::NONE;
     }
 }
@@ -341,7 +344,7 @@ fn lum_berry(
     attacking_side: &mut Side,
     instructions: &mut StateInstructions,
 ) {
-    let active_index = attacking_side.active_index;
+    let active_index = attacking_side.active_indices[0];
     let active_pkmn = attacking_side.get_active();
     instructions
         .instruction_list
@@ -354,11 +357,12 @@ fn lum_berry(
     active_pkmn.status = PokemonStatus::NONE;
     instructions
         .instruction_list
-        .push(Instruction::ChangeItem(ChangeItemInstruction {
-            side_ref: *side_ref,
-            current_item: Items::LUMBERRY,
-            new_item: Items::NONE,
-        }));
+        .push(Instruction::ChangeItem(ChangeItemInstruction::new(
+            *side_ref,
+            0, // FIXME(doubles): slot (no State access in this fn)
+            Items::LUMBERRY,
+            Items::NONE,
+        )));
     active_pkmn.item = Items::NONE;
 }
 
@@ -371,18 +375,20 @@ fn sitrus_berry(
     let heal_amount = cmp::min(active_pkmn.maxhp / 4, active_pkmn.maxhp - active_pkmn.hp);
     instructions
         .instruction_list
-        .push(Instruction::Heal(HealInstruction {
-            side_ref: *side_ref,
-            heal_amount: heal_amount,
-        }));
+        .push(Instruction::Heal(HealInstruction::new(
+            *side_ref,
+            0, // FIXME(doubles): slot (no State access in this fn)
+            heal_amount,
+        )));
     active_pkmn.hp += heal_amount;
     instructions
         .instruction_list
-        .push(Instruction::ChangeItem(ChangeItemInstruction {
-            side_ref: *side_ref,
-            current_item: Items::SITRUSBERRY,
-            new_item: Items::NONE,
-        }));
+        .push(Instruction::ChangeItem(ChangeItemInstruction::new(
+            *side_ref,
+            0, // FIXME(doubles): slot (no State access in this fn)
+            Items::SITRUSBERRY,
+            Items::NONE,
+        )));
     active_pkmn.item = Items::NONE;
 }
 
@@ -391,15 +397,16 @@ fn chesto_berry(
     attacking_side: &mut Side,
     instructions: &mut StateInstructions,
 ) {
-    let active_index = attacking_side.active_index;
+    let active_index = attacking_side.active_indices[0];
     let active_pkmn = attacking_side.get_active();
     instructions
         .instruction_list
-        .push(Instruction::ChangeItem(ChangeItemInstruction {
-            side_ref: *side_ref,
-            current_item: Items::CHESTOBERRY,
-            new_item: Items::NONE,
-        }));
+        .push(Instruction::ChangeItem(ChangeItemInstruction::new(
+            *side_ref,
+            0, // FIXME(doubles): slot (no State access in this fn)
+            Items::CHESTOBERRY,
+            Items::NONE,
+        )));
     active_pkmn.item = Items::NONE;
     add_remove_status_instructions(instructions, active_index, *side_ref, attacking_side);
 }
@@ -410,8 +417,10 @@ fn boost_berry(
     stat: PokemonBoostableStat,
     instructions: &mut StateInstructions,
 ) {
+    let owner_slot = state.actor_slot();
     apply_boost_instruction(
         state.get_side(side_ref),
+        owner_slot,
         &stat,
         &1,
         side_ref,
@@ -421,11 +430,12 @@ fn boost_berry(
     let attacker = state.get_side(side_ref).get_active();
     instructions
         .instruction_list
-        .push(Instruction::ChangeItem(ChangeItemInstruction {
-            side_ref: *side_ref,
-            current_item: attacker.item,
-            new_item: Items::NONE,
-        }));
+        .push(Instruction::ChangeItem(ChangeItemInstruction::new(
+            *side_ref,
+            owner_slot,
+            attacker.item,
+            Items::NONE,
+        )));
     attacker.item = Items::NONE;
 }
 
@@ -435,6 +445,7 @@ pub fn item_before_move(
     side_ref: &SideReference,
     instructions: &mut StateInstructions,
 ) {
+    let def_pos = state.defender_position(side_ref);
     let (attacking_side, defending_side) = state.get_both_sides(side_ref);
     let active_pkmn = attacking_side.get_active();
     let defending_pkmn = defending_side.get_active();
@@ -467,11 +478,12 @@ pub fn item_before_move(
             // no type effectiveness check for chilan
             if &choice.move_type == &PokemonType::NORMAL {
                 instructions.instruction_list.push(Instruction::ChangeItem(
-                    ChangeItemInstruction {
-                        side_ref: side_ref.get_other_side(),
-                        current_item: Items::CHILANBERRY,
-                        new_item: Items::NONE,
-                    },
+                    ChangeItemInstruction::new(
+                        def_pos.side,
+                        def_pos.slot,
+                        Items::CHILANBERRY,
+                        Items::NONE,
+                    ),
                 ));
                 defending_pkmn.item = Items::NONE;
                 choice.base_power /= 2.0;
@@ -764,6 +776,7 @@ pub fn item_on_switch_in(
     side_ref: &SideReference,
     instructions: &mut StateInstructions,
 ) {
+    let owner_slot = state.actor_slot();
     let active_terrain = state.get_terrain();
     let switching_in_side = state.get_side(side_ref);
     let switching_in_pkmn = switching_in_side.get_active_immutable();
@@ -772,6 +785,7 @@ pub fn item_on_switch_in(
             if active_terrain == Terrain::ELECTRICTERRAIN {
                 if apply_boost_instruction(
                     switching_in_side,
+                    owner_slot,
                     &PokemonBoostableStat::Defense,
                     &1,
                     side_ref,
@@ -780,11 +794,12 @@ pub fn item_on_switch_in(
                 ) {
                     state.get_side(side_ref).get_active().item = Items::NONE;
                     instructions.instruction_list.push(Instruction::ChangeItem(
-                        ChangeItemInstruction {
-                            side_ref: side_ref.clone(),
-                            current_item: Items::ELECTRICSEED,
-                            new_item: Items::NONE,
-                        },
+                        ChangeItemInstruction::new(
+                            side_ref.clone(),
+                            owner_slot,
+                            Items::ELECTRICSEED,
+                            Items::NONE,
+                        ),
                     ));
                 }
             }
@@ -793,6 +808,7 @@ pub fn item_on_switch_in(
             if active_terrain == Terrain::GRASSYTERRAIN {
                 if apply_boost_instruction(
                     switching_in_side,
+                    owner_slot,
                     &PokemonBoostableStat::Defense,
                     &1,
                     side_ref,
@@ -801,11 +817,12 @@ pub fn item_on_switch_in(
                 ) {
                     state.get_side(side_ref).get_active().item = Items::NONE;
                     instructions.instruction_list.push(Instruction::ChangeItem(
-                        ChangeItemInstruction {
-                            side_ref: side_ref.clone(),
-                            current_item: Items::GRASSYSEED,
-                            new_item: Items::NONE,
-                        },
+                        ChangeItemInstruction::new(
+                            side_ref.clone(),
+                            owner_slot,
+                            Items::GRASSYSEED,
+                            Items::NONE,
+                        ),
                     ));
                 }
             }
@@ -814,6 +831,7 @@ pub fn item_on_switch_in(
             if active_terrain == Terrain::MISTYTERRAIN {
                 if apply_boost_instruction(
                     switching_in_side,
+                    owner_slot,
                     &PokemonBoostableStat::SpecialDefense,
                     &1,
                     side_ref,
@@ -822,11 +840,12 @@ pub fn item_on_switch_in(
                 ) {
                     state.get_side(side_ref).get_active().item = Items::NONE;
                     instructions.instruction_list.push(Instruction::ChangeItem(
-                        ChangeItemInstruction {
-                            side_ref: side_ref.clone(),
-                            current_item: Items::MISTYSEED,
-                            new_item: Items::NONE,
-                        },
+                        ChangeItemInstruction::new(
+                            side_ref.clone(),
+                            owner_slot,
+                            Items::MISTYSEED,
+                            Items::NONE,
+                        ),
                     ));
                 }
             }
@@ -835,6 +854,7 @@ pub fn item_on_switch_in(
             if active_terrain == Terrain::PSYCHICTERRAIN {
                 if apply_boost_instruction(
                     switching_in_side,
+                    owner_slot,
                     &PokemonBoostableStat::SpecialDefense,
                     &1,
                     side_ref,
@@ -843,11 +863,12 @@ pub fn item_on_switch_in(
                 ) {
                     state.get_side(side_ref).get_active().item = Items::NONE;
                     instructions.instruction_list.push(Instruction::ChangeItem(
-                        ChangeItemInstruction {
-                            side_ref: side_ref.clone(),
-                            current_item: Items::PSYCHICSEED,
-                            new_item: Items::NONE,
-                        },
+                        ChangeItemInstruction::new(
+                            side_ref.clone(),
+                            owner_slot,
+                            Items::PSYCHICSEED,
+                            Items::NONE,
+                        ),
                     ));
                 }
             }
@@ -861,6 +882,7 @@ pub fn item_end_of_turn(
     side_ref: &SideReference,
     instructions: &mut StateInstructions,
 ) {
+    let owner_slot = state.actor_slot();
     let attacking_side = state.get_side(side_ref);
     let active_pkmn = attacking_side.get_active();
     match active_pkmn.item {
@@ -878,20 +900,22 @@ pub fn item_end_of_turn(
                 if active_pkmn.hp < active_pkmn.maxhp {
                     let heal_amount =
                         cmp::min(active_pkmn.maxhp / 16, active_pkmn.maxhp - active_pkmn.hp);
-                    let ins = Instruction::Heal(HealInstruction {
-                        side_ref: side_ref.clone(),
-                        heal_amount: heal_amount,
-                    });
+                    let ins = Instruction::Heal(HealInstruction::new(
+                        side_ref.clone(),
+                        owner_slot,
+                        heal_amount,
+                    ));
                     active_pkmn.hp += heal_amount;
                     instructions.instruction_list.push(ins);
                 }
             } else {
                 let damage_amount =
                     cmp::min(active_pkmn.maxhp / 16, active_pkmn.maxhp - active_pkmn.hp);
-                let ins = Instruction::Damage(DamageInstruction {
-                    side_ref: side_ref.clone(),
-                    damage_amount: damage_amount,
-                });
+                let ins = Instruction::Damage(DamageInstruction::new(
+                    side_ref.clone(),
+                    owner_slot,
+                    damage_amount,
+                ));
                 active_pkmn.hp -= damage_amount;
                 instructions.instruction_list.push(ins);
             }
@@ -901,7 +925,7 @@ pub fn item_end_of_turn(
                 let side = state.get_side(side_ref);
                 let ins = Instruction::ChangeStatus(ChangeStatusInstruction {
                     side_ref: side_ref.clone(),
-                    pokemon_index: side.active_index,
+                    pokemon_index: side.active_indices[0],
                     new_status: PokemonStatus::BURN,
                     old_status: PokemonStatus::NONE,
                 });
@@ -913,10 +937,11 @@ pub fn item_end_of_turn(
             let attacker = state.get_side(side_ref).get_active();
             if attacker.hp < attacker.maxhp {
                 let heal_amount = cmp::min(attacker.maxhp / 16, attacker.maxhp - attacker.hp);
-                let ins = Instruction::Heal(HealInstruction {
-                    side_ref: side_ref.clone(),
-                    heal_amount: heal_amount,
-                });
+                let ins = Instruction::Heal(HealInstruction::new(
+                    side_ref.clone(),
+                    owner_slot,
+                    heal_amount,
+                ));
                 attacker.hp += heal_amount;
                 instructions.instruction_list.push(ins);
             }
@@ -926,7 +951,7 @@ pub fn item_end_of_turn(
                 let side = state.get_side(side_ref);
                 let ins = Instruction::ChangeStatus(ChangeStatusInstruction {
                     side_ref: side_ref.clone(),
-                    pokemon_index: side.active_index,
+                    pokemon_index: side.active_indices[0],
                     new_status: PokemonStatus::TOXIC,
                     old_status: PokemonStatus::NONE,
                 });
@@ -971,7 +996,7 @@ pub fn item_modify_attack_against(
                 && attacking_choice.move_id != Choices::THOUSANDARROWS
             {
                 attacking_choice.base_power = 0.0;
-            } else if attacking_choice.target == MoveTarget::Opponent
+            } else if attacking_choice.target.targets_opponent_side()
                 && attacking_choice.category != MoveCategory::Status
             {
                 attacking_choice.add_or_create_secondaries(Secondary {
@@ -1193,7 +1218,7 @@ pub fn item_modify_attack_being_used(
 
                 #[cfg(feature = "gen4")]
                 if !defending_side
-                    .volatile_statuses
+                    .get_active_immutable().volatile_statuses
                     .contains(&PokemonVolatileStatus::SUBSTITUTE)
                     && attacking_side.get_active_immutable().ability != Abilities::MAGICGUARD
                 {

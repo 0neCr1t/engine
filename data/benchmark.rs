@@ -1,4 +1,5 @@
 use clap::Parser;
+use poke_engine::decision;
 use poke_engine::mcts::perform_mcts;
 use poke_engine::mcts_threaded::perform_mcts_shared_tree;
 use poke_engine::state::State;
@@ -38,7 +39,7 @@ fn main() {
 
     let start_time = std::time::Instant::now();
     for (i, state) in states.iter_mut().enumerate() {
-        let (side_one_options, side_two_options) = state.root_get_all_options();
+        let (side_one_options, side_two_options) = decision::root_get_all_options(state);
 
         if args.threads > 1 {
             perform_mcts_shared_tree(

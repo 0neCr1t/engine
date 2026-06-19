@@ -1,6 +1,5 @@
+use crate::decision::{self, SideChoice};
 use crate::engine::evaluate::evaluate;
-use crate::engine::generate_instructions::generate_instructions_from_move_pair;
-use crate::engine::state::MoveChoice;
 use crate::instruction::StateInstructions;
 use crate::state::State;
 use rand::prelude::*;
@@ -43,7 +42,7 @@ impl Node {
             s2_options: None,
         }
     }
-    unsafe fn populate(&mut self, s1_options: Vec<MoveChoice>, s2_options: Vec<MoveChoice>) {
+    unsafe fn populate(&mut self, s1_options: Vec<SideChoice>, s2_options: Vec<SideChoice>) {
         let s1_options_vec: Vec<MoveNode> = s1_options
             .iter()
             .map(|x| MoveNode {
@@ -85,7 +84,7 @@ impl Node {
         rng: &mut impl Rng,
     ) -> (*mut Node, usize, usize) {
         if self.s1_options.is_none() {
-            let (s1_options, s2_options) = state.get_all_options();
+            let (s1_options, s2_options) = decision::get_all_options(state);
             self.populate(s1_options, s2_options);
         }
 
@@ -136,13 +135,13 @@ impl Node {
         let s2_move = &self.s2_options.as_ref().unwrap()[s2_move_index].move_choice;
         // if the battle is over or both moves are none there is no need to expand
         if (state.battle_is_over() != 0.0 && !self.root)
-            || (s1_move == &MoveChoice::None && s2_move == &MoveChoice::None)
+            || (decision::is_none_action(s1_move) && decision::is_none_action(s2_move))
         {
             return self as *mut Node;
         }
         let should_branch_on_damage = self.root || (*self.parent).root;
         let mut new_instructions =
-            generate_instructions_from_move_pair(state, s1_move, s2_move, should_branch_on_damage);
+            decision::generate_instructions(state, s1_move, s2_move, should_branch_on_damage);
         let mut this_pair_vec = Vec::with_capacity(new_instructions.len());
         for state_instructions in new_instructions.drain(..) {
             let mut new_node = Node::new();
@@ -204,7 +203,7 @@ impl Node {
 
 #[derive(Debug)]
 pub struct MoveNode {
-    pub move_choice: MoveChoice,
+    pub move_choice: SideChoice,
     pub total_score: f32,
     pub visits: u32,
 }
@@ -226,7 +225,7 @@ impl MoveNode {
 
 #[derive(Clone)]
 pub struct MctsSideResult {
-    pub move_choice: MoveChoice,
+    pub move_choice: SideChoice,
     pub total_score: f32,
     pub visits: u32,
 }
@@ -298,8 +297,8 @@ fn run_mcts_loop(
 
 pub fn perform_mcts(
     state: &mut State,
-    side_one_options: Vec<MoveChoice>,
-    side_two_options: Vec<MoveChoice>,
+    side_one_options: Vec<SideChoice>,
+    side_two_options: Vec<SideChoice>,
     max_time: Duration,
     max_iterations: u32,
 ) -> MctsResult {

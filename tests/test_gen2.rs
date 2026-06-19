@@ -658,7 +658,7 @@ fn test_destinybond_is_removed_if_non_destinybond_is_used() {
     state.side_one.get_active().speed = 150;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::DESTINYBOND);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -688,7 +688,7 @@ fn test_switching_out_while_other_side_is_partiallytrapped() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::PARTIALLYTRAPPED);
 
     let vec_of_instructions = generate_instructions_with_state_assertion(
@@ -863,7 +863,7 @@ fn test_nothing_happens_if_destinybond_is_used_while_already_having_destinybond(
     state.side_one.get_active().speed = 150;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::DESTINYBOND);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -1171,7 +1171,7 @@ fn test_bellydrum() {
 #[test]
 fn test_bellydrum_with_negative_prior_boost() {
     let mut state = State::default();
-    state.side_one.attack_boost = -1;
+    state.side_one.get_active().attack_boost = -1;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -1222,7 +1222,7 @@ fn test_bellydrum_below_50_percent_boosts_by_2_bug() {
 fn test_bellydrum_below_50_percent_boosts_by_2_bug_does_not_overboost() {
     let mut state = State::default();
     state.side_one.get_active().hp = 49;
-    state.side_one.attack_boost = 5;
+    state.side_one.get_active().attack_boost = 5;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -1443,9 +1443,9 @@ fn test_confuseray_into_substitute() {
     let mut state = State::default();
     state
         .side_two
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::SUBSTITUTE);
-    state.side_two.substitute_health = 20;
+    state.side_two.get_active().substitute_health = 20;
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -1489,7 +1489,7 @@ fn test_using_none_with_mustrecharge_removes_volatile() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::MUSTRECHARGE);
 
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
@@ -1515,7 +1515,7 @@ fn test_mustrecharge_move_only_allows_none() {
     let mut state = State::default();
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::MUSTRECHARGE);
 
     let options = state.get_all_options();

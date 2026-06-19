@@ -117,35 +117,24 @@ pub fn evaluate(state: &State) -> f32 {
         if pkmn.hp > 0 {
             side_one_alive_count += 1.0;
             score += evaluate_pokemon(pkmn);
-            if iter.pokemon_index == state.side_one.active_index {
-                if state
-                    .side_one
-                    .volatile_statuses
-                    .contains(&PokemonVolatileStatus::LEECHSEED)
-                {
+            if iter.pokemon_index == state.side_one.active_indices[0] {
+                let vs = &state.side_one.get_active_immutable().volatile_statuses;
+                if vs.contains(&PokemonVolatileStatus::LEECHSEED) {
                     score += LEECH_SEED;
                 }
-                if state
-                    .side_one
-                    .volatile_statuses
-                    .contains(&PokemonVolatileStatus::SUBSTITUTE)
-                {
+                if vs.contains(&PokemonVolatileStatus::SUBSTITUTE) {
                     score += SUBSTITUTE;
                 }
-                if state
-                    .side_one
-                    .volatile_statuses
-                    .contains(&PokemonVolatileStatus::CONFUSION)
-                {
+                if vs.contains(&PokemonVolatileStatus::CONFUSION) {
                     score += CONFUSION;
                 }
-                score += get_boost_multiplier(state.side_one.attack_boost) * POKEMON_ATTACK_BOOST;
-                score += get_boost_multiplier(state.side_one.defense_boost) * POKEMON_DEFENSE_BOOST;
-                score += get_boost_multiplier(state.side_one.special_attack_boost)
+                score += get_boost_multiplier(state.side_one.get_active_immutable().attack_boost) * POKEMON_ATTACK_BOOST;
+                score += get_boost_multiplier(state.side_one.get_active_immutable().defense_boost) * POKEMON_DEFENSE_BOOST;
+                score += get_boost_multiplier(state.side_one.get_active_immutable().special_attack_boost)
                     * POKEMON_SPECIAL_ATTACK_BOOST;
-                score += get_boost_multiplier(state.side_one.special_defense_boost)
+                score += get_boost_multiplier(state.side_one.get_active_immutable().special_defense_boost)
                     * POKEMON_SPECIAL_DEFENSE_BOOST;
-                score += get_boost_multiplier(state.side_one.speed_boost) * POKEMON_SPEED_BOOST;
+                score += get_boost_multiplier(state.side_one.get_active_immutable().speed_boost) * POKEMON_SPEED_BOOST;
             }
         }
     }
@@ -155,35 +144,24 @@ pub fn evaluate(state: &State) -> f32 {
             side_two_alive_count += 1.0;
             score -= evaluate_pokemon(pkmn);
 
-            if iter.pokemon_index == state.side_two.active_index {
-                if state
-                    .side_two
-                    .volatile_statuses
-                    .contains(&PokemonVolatileStatus::LEECHSEED)
-                {
+            if iter.pokemon_index == state.side_two.active_indices[0] {
+                let vs = &state.side_two.get_active_immutable().volatile_statuses;
+                if vs.contains(&PokemonVolatileStatus::LEECHSEED) {
                     score -= LEECH_SEED;
                 }
-                if state
-                    .side_two
-                    .volatile_statuses
-                    .contains(&PokemonVolatileStatus::SUBSTITUTE)
-                {
+                if vs.contains(&PokemonVolatileStatus::SUBSTITUTE) {
                     score -= SUBSTITUTE;
                 }
-                if state
-                    .side_two
-                    .volatile_statuses
-                    .contains(&PokemonVolatileStatus::CONFUSION)
-                {
+                if vs.contains(&PokemonVolatileStatus::CONFUSION) {
                     score -= CONFUSION;
                 }
-                score -= get_boost_multiplier(state.side_two.attack_boost) * POKEMON_ATTACK_BOOST;
-                score -= get_boost_multiplier(state.side_two.defense_boost) * POKEMON_DEFENSE_BOOST;
-                score -= get_boost_multiplier(state.side_two.special_attack_boost)
+                score -= get_boost_multiplier(state.side_two.get_active_immutable().attack_boost) * POKEMON_ATTACK_BOOST;
+                score -= get_boost_multiplier(state.side_two.get_active_immutable().defense_boost) * POKEMON_DEFENSE_BOOST;
+                score -= get_boost_multiplier(state.side_two.get_active_immutable().special_attack_boost)
                     * POKEMON_SPECIAL_ATTACK_BOOST;
-                score -= get_boost_multiplier(state.side_two.special_defense_boost)
+                score -= get_boost_multiplier(state.side_two.get_active_immutable().special_defense_boost)
                     * POKEMON_SPECIAL_DEFENSE_BOOST;
-                score -= get_boost_multiplier(state.side_two.speed_boost) * POKEMON_SPEED_BOOST;
+                score -= get_boost_multiplier(state.side_two.get_active_immutable().speed_boost) * POKEMON_SPEED_BOOST;
             }
         }
     }

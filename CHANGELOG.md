@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+
+- **Doubles battles** (2 active Pokemon per side), gated behind the `doubles` cargo feature and supported
+  for gen4-9. Build with e.g. `make gen9-doubles`, or for the Python bindings `make dev-doubles`. Singles
+  builds are unchanged.
+  - `BattlePosition { side, slot }` targeting abstraction; spread moves with the 0.75× reduction; move
+    redirection (Follow Me / Rage Powder / Spotlight / Lightning Rod / Storm Drain); Helping Hand;
+    Wide Guard / Quick Guard / Crafty Shield; Ally Switch; ally abilities (Friend Guard, Battery,
+    Power Spot, Telepathy); up-to-four-actor turn ordering with speed-tie branching; multi-faint
+    replacements.
+  - Per-active battle state (boosts, volatile statuses, substitute, `last_used_move`, `damage_dealt`)
+    moved onto `Pokemon`. Python `Side.active_indices` is now a list and those fields live on `Pokemon`.
+  - Combined per-slot move syntax in the CLI and Python (`"move,slot;move"`); MCTS is the recommended
+    doubles search engine.
+
 ## [v0.0.47](https://github.com/pmariglia/poke-engine/releases/tag/v0.0.47) - 2026-06-13
 
 ### Features

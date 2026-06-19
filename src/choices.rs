@@ -2,7 +2,7 @@ use crate::define_enum_with_from_str;
 use crate::engine::state::PokemonVolatileStatus;
 use crate::state::{
     PokemonBoostableStat, PokemonIndex, PokemonMoveIndex, PokemonSideCondition, PokemonStatus,
-    PokemonType,
+    PokemonType, SideReference,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -873,7 +873,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::AURORAVEIL,
         Choice {
             move_id: Choices::AURORAVEIL,
-            target: MoveTarget::User,
+            target: MoveTarget::UserSide,
             move_type: PokemonType::ICE,
             flags: Flags {
                 ..Default::default()
@@ -1438,6 +1438,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::BLIZZARD,
             Choice {
                 move_id: Choices::BLIZZARD,
+                target: MoveTarget::AllAdjacentFoes,
                 accuracy: 90.0,
                 base_power: 120.0,
                 category: MoveCategory::Special,
@@ -1464,6 +1465,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::BLIZZARD,
             Choice {
                 move_id: Choices::BLIZZARD,
+                target: MoveTarget::AllAdjacentFoes,
                 accuracy: 70.0,
                 base_power: 120.0,
                 category: MoveCategory::Special,
@@ -1486,6 +1488,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::BLIZZARD,
             Choice {
                 move_id: Choices::BLIZZARD,
+                target: MoveTarget::AllAdjacentFoes,
                 accuracy: 70.0,
                 base_power: 110.0,
                 category: MoveCategory::Special,
@@ -1696,6 +1699,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::BOOMBURST,
         Choice {
             move_id: Choices::BOOMBURST,
+            target: MoveTarget::AllAdjacent,
             base_power: 140.0,
             category: MoveCategory::Special,
             move_type: PokemonType::NORMAL,
@@ -1780,6 +1784,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::BREAKINGSWIPE,
         Choice {
             move_id: Choices::BREAKINGSWIPE,
+            target: MoveTarget::AllAdjacentFoes,
             base_power: 60.0,
             category: MoveCategory::Physical,
             move_type: PokemonType::DRAGON,
@@ -1836,6 +1841,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::BRUTALSWING,
         Choice {
             move_id: Choices::BRUTALSWING,
+            target: MoveTarget::AllAdjacent,
             base_power: 60.0,
             category: MoveCategory::Physical,
             move_type: PokemonType::DARK,
@@ -1852,6 +1858,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::BUBBLE,
             Choice {
                 move_id: Choices::BUBBLE,
+                target: MoveTarget::AllAdjacentFoes,
                 base_power: 20.0,
                 category: MoveCategory::Special,
                 move_type: PokemonType::WATER,
@@ -1883,6 +1890,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::BUBBLE,
             Choice {
                 move_id: Choices::BUBBLE,
+                target: MoveTarget::AllAdjacentFoes,
                 base_power: 20.0,
                 category: MoveCategory::Special,
                 move_type: PokemonType::WATER,
@@ -1910,6 +1918,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::BUBBLE,
             Choice {
                 move_id: Choices::BUBBLE,
+                target: MoveTarget::AllAdjacentFoes,
                 base_power: 40.0,
                 category: MoveCategory::Special,
                 move_type: PokemonType::WATER,
@@ -2057,6 +2066,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::BULLDOZE,
         Choice {
             move_id: Choices::BULLDOZE,
+            target: MoveTarget::AllAdjacent,
             base_power: 60.0,
             category: MoveCategory::Physical,
             move_type: PokemonType::GROUND,
@@ -3410,6 +3420,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::DAZZLINGGLEAM,
         Choice {
             move_id: Choices::DAZZLINGGLEAM,
+            target: MoveTarget::AllAdjacentFoes,
             base_power: 80.0,
             category: MoveCategory::Special,
             move_type: PokemonType::FAIRY,
@@ -3424,12 +3435,15 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::DECORATE,
         Choice {
             move_id: Choices::DECORATE,
+            // Decorate boosts the ally's Attack and Special Attack (a doubles
+            // support move). In singles the ally target resolves to the user.
+            target: MoveTarget::Ally,
             move_type: PokemonType::FAIRY,
             flags: Flags {
                 ..Default::default()
             },
             boost: Some(Boost {
-                target: MoveTarget::Opponent,
+                target: MoveTarget::Ally,
                 boosts: StatBoosts {
                     attack: 2,
                     defense: 0,
@@ -3561,6 +3575,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::DIAMONDSTORM,
             Choice {
                 move_id: Choices::DIAMONDSTORM,
+                target: MoveTarget::AllAdjacentFoes,
                 accuracy: 95.0,
                 base_power: 100.0,
                 category: MoveCategory::Physical,
@@ -3589,6 +3604,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::DIAMONDSTORM,
             Choice {
                 move_id: Choices::DIAMONDSTORM,
+                target: MoveTarget::AllAdjacentFoes,
                 accuracy: 95.0,
                 base_power: 100.0,
                 category: MoveCategory::Physical,
@@ -3726,6 +3742,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::DISARMINGVOICE,
         Choice {
             move_id: Choices::DISARMINGVOICE,
+            target: MoveTarget::AllAdjacentFoes,
             base_power: 40.0,
             category: MoveCategory::Special,
             move_type: PokemonType::FAIRY,
@@ -3741,6 +3758,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::DISCHARGE,
         Choice {
             move_id: Choices::DISCHARGE,
+            target: MoveTarget::AllAdjacent,
             base_power: 80.0,
             category: MoveCategory::Special,
             move_type: PokemonType::ELECTRIC,
@@ -4538,6 +4556,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::EARTHQUAKE,
         Choice {
             move_id: Choices::EARTHQUAKE,
+            target: MoveTarget::AllAdjacent,
             base_power: 100.0,
             category: MoveCategory::Physical,
             move_type: PokemonType::GROUND,
@@ -4693,6 +4712,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::ELECTROWEB,
         Choice {
             move_id: Choices::ELECTROWEB,
+            target: MoveTarget::AllAdjacentFoes,
             accuracy: 95.0,
             base_power: 55.0,
             category: MoveCategory::Special,
@@ -4879,6 +4899,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::ERUPTION,
         Choice {
             move_id: Choices::ERUPTION,
+            target: MoveTarget::AllAdjacentFoes,
             base_power: 150.0,
             category: MoveCategory::Special,
             move_type: PokemonType::FIRE,
@@ -4950,6 +4971,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::EXPLOSION,
             Choice {
                 move_id: Choices::EXPLOSION,
+                target: MoveTarget::AllAdjacent,
                 base_power: 170.0,
                 category: MoveCategory::Physical,
                 move_type: PokemonType::NORMAL,
@@ -4965,6 +4987,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::EXPLOSION,
             Choice {
                 move_id: Choices::EXPLOSION,
+                target: MoveTarget::AllAdjacent,
                 base_power: 250.0,
                 category: MoveCategory::Physical,
                 move_type: PokemonType::NORMAL,
@@ -6626,6 +6649,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::GLACIATE,
         Choice {
             move_id: Choices::GLACIATE,
+            target: MoveTarget::AllAdjacentFoes,
             accuracy: 95.0,
             base_power: 65.0,
             category: MoveCategory::Special,
@@ -7438,6 +7462,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::HEATWAVE,
             Choice {
                 move_id: Choices::HEATWAVE,
+                target: MoveTarget::AllAdjacentFoes,
                 accuracy: 90.0,
                 base_power: 100.0,
                 category: MoveCategory::Special,
@@ -7460,6 +7485,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::HEATWAVE,
             Choice {
                 move_id: Choices::HEATWAVE,
+                target: MoveTarget::AllAdjacentFoes,
                 accuracy: 90.0,
                 base_power: 95.0,
                 category: MoveCategory::Special,
@@ -7497,13 +7523,15 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choice {
             move_id: Choices::HELPINGHAND,
             priority: 5,
-            target: MoveTarget::User,
+            target: MoveTarget::Ally,
             move_type: PokemonType::NORMAL,
             flags: Flags {
                 ..Default::default()
             },
             volatile_status: Some(VolatileStatus {
-                target: MoveTarget::User,
+                // Lands on the ally (the partner whose damage is boosted). In
+                // singles this resolves to the user's own slot 0 like before.
+                target: MoveTarget::Ally,
                 volatile_status: PokemonVolatileStatus::HELPINGHAND,
             }),
             ..Default::default()
@@ -8410,6 +8438,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::HYPERVOICE,
         Choice {
             move_id: Choices::HYPERVOICE,
+            target: MoveTarget::AllAdjacentFoes,
             base_power: 90.0,
             category: MoveCategory::Special,
             move_type: PokemonType::NORMAL,
@@ -8690,6 +8719,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::ICYWIND,
         Choice {
             move_id: Choices::ICYWIND,
+            target: MoveTarget::AllAdjacentFoes,
             accuracy: 95.0,
             base_power: 55.0,
             category: MoveCategory::Special,
@@ -8740,6 +8770,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::INCINERATE,
             Choice {
                 move_id: Choices::INCINERATE,
+                target: MoveTarget::AllAdjacentFoes,
                 base_power: 30.0,
                 category: MoveCategory::Special,
                 move_type: PokemonType::FIRE,
@@ -8755,6 +8786,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::INCINERATE,
             Choice {
                 move_id: Choices::INCINERATE,
+                target: MoveTarget::AllAdjacentFoes,
                 base_power: 60.0,
                 category: MoveCategory::Special,
                 move_type: PokemonType::FIRE,
@@ -9297,6 +9329,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::LAVAPLUME,
         Choice {
             move_id: Choices::LAVAPLUME,
+            target: MoveTarget::AllAdjacent,
             base_power: 80.0,
             category: MoveCategory::Special,
             move_type: PokemonType::FIRE,
@@ -9620,7 +9653,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::LIGHTSCREEN,
             Choice {
                 move_id: Choices::LIGHTSCREEN,
-                target: MoveTarget::User,
+                target: MoveTarget::UserSide,
                 move_type: PokemonType::PSYCHIC,
                 flags: Flags {
                     ..Default::default()
@@ -9637,7 +9670,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::LIGHTSCREEN,
             Choice {
                 move_id: Choices::LIGHTSCREEN,
-                target: MoveTarget::User,
+                target: MoveTarget::UserSide,
                 move_type: PokemonType::PSYCHIC,
                 flags: Flags {
                     ..Default::default()
@@ -10165,6 +10198,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::MAGNITUDE,
         Choice {
             move_id: Choices::MAGNITUDE,
+            target: MoveTarget::AllAdjacent,
             category: MoveCategory::Physical,
             move_type: PokemonType::GROUND,
             flags: Flags {
@@ -10178,6 +10212,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::MAKEITRAIN,
         Choice {
             move_id: Choices::MAKEITRAIN,
+            target: MoveTarget::AllAdjacentFoes,
             base_power: 120.0,
             category: MoveCategory::Special,
             move_type: PokemonType::STEEL,
@@ -10619,6 +10654,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::MINDBLOWN,
         Choice {
             move_id: Choices::MINDBLOWN,
+            target: MoveTarget::AllAdjacent,
             base_power: 150.0,
             category: MoveCategory::Special,
             move_type: PokemonType::FIRE,
@@ -10741,7 +10777,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::MIST,
         Choice {
             move_id: Choices::MIST,
-            target: MoveTarget::User,
+            target: MoveTarget::UserSide,
             move_type: PokemonType::ICE,
             flags: Flags {
                 ..Default::default()
@@ -10814,6 +10850,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::MISTYEXPLOSION,
         Choice {
             move_id: Choices::MISTYEXPLOSION,
+            target: MoveTarget::AllAdjacent,
             base_power: 100.0,
             category: MoveCategory::Special,
             move_type: PokemonType::FAIRY,
@@ -10987,6 +11024,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::MUDDYWATER,
             Choice {
                 move_id: Choices::MUDDYWATER,
+                target: MoveTarget::AllAdjacentFoes,
                 accuracy: 85.0,
                 base_power: 95.0,
                 category: MoveCategory::Special,
@@ -11015,6 +11053,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::MUDDYWATER,
             Choice {
                 move_id: Choices::MUDDYWATER,
+                target: MoveTarget::AllAdjacentFoes,
                 accuracy: 85.0,
                 base_power: 90.0,
                 category: MoveCategory::Special,
@@ -11618,6 +11657,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::ORIGINPULSE,
         Choice {
             move_id: Choices::ORIGINPULSE,
+            target: MoveTarget::AllAdjacentFoes,
             accuracy: 85.0,
             base_power: 110.0,
             category: MoveCategory::Special,
@@ -11795,6 +11835,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::PARABOLICCHARGE,
             Choice {
                 move_id: Choices::PARABOLICCHARGE,
+                target: MoveTarget::AllAdjacent,
                 base_power: 50.0,
                 category: MoveCategory::Special,
                 move_type: PokemonType::ELECTRIC,
@@ -11812,6 +11853,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::PARABOLICCHARGE,
             Choice {
                 move_id: Choices::PARABOLICCHARGE,
+                target: MoveTarget::AllAdjacent,
                 base_power: 65.0,
                 category: MoveCategory::Special,
                 move_type: PokemonType::ELECTRIC,
@@ -11911,6 +11953,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::PETALBLIZZARD,
         Choice {
             move_id: Choices::PETALBLIZZARD,
+            target: MoveTarget::AllAdjacent,
             base_power: 90.0,
             category: MoveCategory::Physical,
             move_type: PokemonType::GRASS,
@@ -12470,6 +12513,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::POWDERSNOW,
         Choice {
             move_id: Choices::POWDERSNOW,
+            target: MoveTarget::AllAdjacentFoes,
             base_power: 40.0,
             category: MoveCategory::Special,
             move_type: PokemonType::ICE,
@@ -12640,6 +12684,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::PRECIPICEBLADES,
         Choice {
             move_id: Choices::PRECIPICEBLADES,
+            target: MoveTarget::AllAdjacentFoes,
             accuracy: 85.0,
             base_power: 120.0,
             category: MoveCategory::Physical,
@@ -13285,6 +13330,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::RAZORLEAF,
         Choice {
             move_id: Choices::RAZORLEAF,
+            target: MoveTarget::AllAdjacentFoes,
             accuracy: 95.0,
             base_power: 55.0,
             category: MoveCategory::Physical,
@@ -13387,7 +13433,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::REFLECT,
             Choice {
                 move_id: Choices::REFLECT,
-                target: MoveTarget::User,
+                target: MoveTarget::UserSide,
                 move_type: PokemonType::PSYCHIC,
                 flags: Flags {
                     ..Default::default()
@@ -13404,7 +13450,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::REFLECT,
             Choice {
                 move_id: Choices::REFLECT,
-                target: MoveTarget::User,
+                target: MoveTarget::UserSide,
                 move_type: PokemonType::PSYCHIC,
                 flags: Flags {
                     ..Default::default()
@@ -13711,6 +13757,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::ROCKSLIDE,
             Choice {
                 move_id: Choices::ROCKSLIDE,
+                target: MoveTarget::AllAdjacentFoes,
                 accuracy: 90.0,
                 base_power: 75.0,
                 category: MoveCategory::Physical,
@@ -13727,6 +13774,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::ROCKSLIDE,
             Choice {
                 move_id: Choices::ROCKSLIDE,
+                target: MoveTarget::AllAdjacentFoes,
                 accuracy: 90.0,
                 base_power: 75.0,
                 category: MoveCategory::Physical,
@@ -14062,7 +14110,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::SAFEGUARD,
         Choice {
             move_id: Choices::SAFEGUARD,
-            target: MoveTarget::User,
+            target: MoveTarget::UserSide,
             move_type: PokemonType::NORMAL,
             flags: Flags {
                 ..Default::default()
@@ -14402,6 +14450,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::SEARINGSHOT,
         Choice {
             move_id: Choices::SEARINGSHOT,
+            target: MoveTarget::AllAdjacent,
             base_power: 100.0,
             category: MoveCategory::Special,
             move_type: PokemonType::FIRE,
@@ -14513,6 +14562,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::SELFDESTRUCT,
             Choice {
                 move_id: Choices::SELFDESTRUCT,
+                target: MoveTarget::AllAdjacent,
                 base_power: 130.0,
                 category: MoveCategory::Physical,
                 move_type: PokemonType::NORMAL,
@@ -14528,6 +14578,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::SELFDESTRUCT,
             Choice {
                 move_id: Choices::SELFDESTRUCT,
+                target: MoveTarget::AllAdjacent,
                 base_power: 200.0,
                 category: MoveCategory::Physical,
                 move_type: PokemonType::NORMAL,
@@ -15271,6 +15322,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::SLUDGEWAVE,
         Choice {
             move_id: Choices::SLUDGEWAVE,
+            target: MoveTarget::AllAdjacent,
             base_power: 95.0,
             category: MoveCategory::Special,
             move_type: PokemonType::POISON,
@@ -15452,6 +15504,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::SNARL,
         Choice {
             move_id: Choices::SNARL,
+            target: MoveTarget::AllAdjacentFoes,
             accuracy: 95.0,
             base_power: 55.0,
             category: MoveCategory::Special,
@@ -15794,6 +15847,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::SPIKES,
         Choice {
             move_id: Choices::SPIKES,
+            target: MoveTarget::FoeSide,
             move_type: PokemonType::GROUND,
             flags: Flags {
                 reflectable: true,
@@ -16015,6 +16069,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::STEALTHROCK,
         Choice {
             move_id: Choices::STEALTHROCK,
+            target: MoveTarget::FoeSide,
             move_type: PokemonType::ROCK,
             flags: Flags {
                 reflectable: true,
@@ -16133,6 +16188,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::STICKYWEB,
         Choice {
             move_id: Choices::STICKYWEB,
+            target: MoveTarget::FoeSide,
             move_type: PokemonType::BUG,
             flags: Flags {
                 reflectable: true,
@@ -16383,6 +16439,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::STRUGGLEBUG,
             Choice {
                 move_id: Choices::STRUGGLEBUG,
+                target: MoveTarget::AllAdjacentFoes,
                 base_power: 30.0,
                 category: MoveCategory::Special,
                 move_type: PokemonType::BUG,
@@ -16410,6 +16467,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::STRUGGLEBUG,
             Choice {
                 move_id: Choices::STRUGGLEBUG,
+                target: MoveTarget::AllAdjacentFoes,
                 base_power: 50.0,
                 category: MoveCategory::Special,
                 move_type: PokemonType::BUG,
@@ -16651,6 +16709,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::SURF,
             Choice {
                 move_id: Choices::SURF,
+                target: MoveTarget::AllAdjacent,
                 base_power: 95.0,
                 category: MoveCategory::Special,
                 move_type: PokemonType::WATER,
@@ -16666,6 +16725,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
             Choices::SURF,
             Choice {
                 move_id: Choices::SURF,
+                target: MoveTarget::AllAdjacent,
                 base_power: 90.0,
                 category: MoveCategory::Special,
                 move_type: PokemonType::WATER,
@@ -16820,6 +16880,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::SWIFT,
         Choice {
             move_id: Choices::SWIFT,
+            target: MoveTarget::AllAdjacentFoes,
             base_power: 60.0,
             category: MoveCategory::Special,
             move_type: PokemonType::NORMAL,
@@ -17066,7 +17127,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::TAILWIND,
         Choice {
             move_id: Choices::TAILWIND,
-            target: MoveTarget::User,
+            target: MoveTarget::UserSide,
             move_type: PokemonType::FLYING,
             flags: Flags {
                 wind: true,
@@ -17920,6 +17981,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::TOXICSPIKES,
         Choice {
             move_id: Choices::TOXICSPIKES,
+            target: MoveTarget::FoeSide,
             move_type: PokemonType::POISON,
             flags: Flags {
                 reflectable: true,
@@ -18244,6 +18306,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::TWISTER,
         Choice {
             move_id: Choices::TWISTER,
+            target: MoveTarget::AllAdjacentFoes,
             base_power: 40.0,
             category: MoveCategory::Special,
             move_type: PokemonType::DRAGON,
@@ -18729,6 +18792,7 @@ pub static MOVES: LazyLock<HashMap<Choices, Choice>> = LazyLock::new(|| {
         Choices::WATERSPOUT,
         Choice {
             move_id: Choices::WATERSPOUT,
+            target: MoveTarget::AllAdjacentFoes,
             base_power: 150.0,
             category: MoveCategory::Special,
             move_type: PokemonType::WATER,
@@ -19339,10 +19403,84 @@ pub enum MoveCategory {
     Switch,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+/// Where a move (or one of its sub-effects) is aimed.
+///
+/// Singles only ever uses `User` (the acting Pokemon, conceptually "Self") and
+/// `Opponent` (the lone foe across the field, conceptually "SingleFoe"). The
+/// remaining variants describe the richer targeting that matters once two
+/// Pokemon are active per side (doubles); in singles they all collapse onto the
+/// same two sides via [`MoveTarget::targets_user_side`] / [`MoveTarget::affected_side`].
+///
+/// `User`/`Opponent` are kept as the canonical self/single-foe names (rather than
+/// renamed to `Self`/`SingleFoe`) because `Self` is a reserved word in Rust and
+/// because every generation already constructs these two variants in hundreds of
+/// places — keeping them avoids a churny, risky rename in an otherwise neutral change.
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum MoveTarget {
+    /// The acting Pokemon itself ("Self").
     User,
+    /// The single foe directly across the field ("SingleFoe"). The default target.
     Opponent,
+    /// An adjacent ally (doubles only; no distinct ally exists in singles).
+    Ally,
+    /// Both opposing Pokemon (doubles spread move that does not hit the ally).
+    BothFoes,
+    /// All adjacent Pokemon, foes and ally alike (e.g. Earthquake, Surf).
+    AllAdjacent,
+    /// All adjacent foes only (e.g. Rock Slide, Heat Wave, Dazzling Gleam).
+    AllAdjacentFoes,
+    /// Every other Pokemon on the field (e.g. moves like Brutal Swing's intent).
+    AllOthers,
+    /// The user's own side as a whole (screens, Tailwind, Safeguard…).
+    UserSide,
+    /// The opposing side as a whole (entry hazards: Spikes, Stealth Rock…).
+    FoeSide,
+    /// A randomly chosen foe (e.g. Outrage's target in doubles).
+    RandomFoe,
+}
+
+impl MoveTarget {
+    /// Whether this target lands on the user's own side.
+    ///
+    /// In singles this is the only side distinction that matters: self/ally/own-side
+    /// targets resolve to the user's side, everything else to the opposing side.
+    pub fn targets_user_side(&self) -> bool {
+        matches!(
+            self,
+            MoveTarget::User | MoveTarget::UserSide | MoveTarget::Ally
+        )
+    }
+
+    /// Whether this target lands on (or reaches into) the opposing side.
+    /// The complement of [`MoveTarget::targets_user_side`].
+    pub fn targets_opponent_side(&self) -> bool {
+        !self.targets_user_side()
+    }
+
+    /// The side an effect with this target lands on, given the user's side.
+    ///
+    /// This is the singles resolution; doubles slot selection is layered on top
+    /// later via `BattlePosition`.
+    pub fn affected_side(&self, user_side: SideReference) -> SideReference {
+        if self.targets_user_side() {
+            user_side
+        } else {
+            user_side.get_other_side()
+        }
+    }
+
+    /// Whether this is a spread move that can hit more than one Pokemon at once
+    /// (only meaningful in doubles). Single-target moves (`Opponent`, `Ally`,
+    /// `User`, `RandomFoe`) and whole-side effects return false.
+    pub fn hits_multiple_targets(&self) -> bool {
+        matches!(
+            self,
+            MoveTarget::BothFoes
+                | MoveTarget::AllAdjacent
+                | MoveTarget::AllAdjacentFoes
+                | MoveTarget::AllOthers
+        )
+    }
 }
 
 #[derive(Debug, Clone)]

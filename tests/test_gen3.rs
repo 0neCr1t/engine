@@ -191,10 +191,10 @@ fn test_taunt_gets_applied_and_duration_increments_end_of_turn() {
 #[test]
 fn test_taunt_volatile_is_removed_end_of_turn_when_it_would_reach_2() {
     let mut state = State::default();
-    state.side_one.volatile_status_durations.taunt = 1;
+    state.side_one.get_active().volatile_status_durations.taunt = 1;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TAUNT);
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -222,11 +222,11 @@ fn test_taunt_volatile_is_removed_end_of_turn_when_it_would_reach_2() {
 #[test]
 fn test_taunt_re_enables_disabled_moves_when_being_removed() {
     let mut state = State::default();
-    state.side_one.volatile_status_durations.taunt = 1;
+    state.side_one.get_active().volatile_status_durations.taunt = 1;
     state.side_one.get_active().moves.m1.disabled = true;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TAUNT);
     let vec_of_instructions = set_moves_on_pkmn_and_call_generate_instructions(
         &mut state,
@@ -258,10 +258,10 @@ fn test_taunt_re_enables_disabled_moves_when_being_removed() {
 #[test]
 fn test_switching_out_with_taunt_resets_duration_to_0() {
     let mut state = State::default();
-    state.side_one.volatile_status_durations.taunt = 1;
+    state.side_one.get_active().volatile_status_durations.taunt = 1;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TAUNT);
     let vec_of_instructions = generate_instructions_with_state_assertion(
         &mut state,
@@ -301,7 +301,7 @@ fn test_taunt_prevents_status_move() {
     state.side_one.pokemon[PokemonIndex::P5].hp = 0;
     state
         .side_one
-        .volatile_statuses
+        .get_active().volatile_statuses
         .insert(PokemonVolatileStatus::TAUNT);
 
     state.side_one.get_active().moves[&PokemonMoveIndex::M0] = Move {
