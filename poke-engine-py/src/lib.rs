@@ -17,7 +17,8 @@ use poke_engine::search::iterative_deepen_expectiminimax;
 use poke_engine::state::{
     DamageDealt, LastUsedMove, Move, Pokemon, PokemonIndex, PokemonMoves, PokemonNature,
     PokemonStatus, PokemonType, Side, SideConditions, SidePokemon, SideReference, State,
-    StateTerrain, StateTrickRoom, StateWeather, VolatileStatusDurations, ACTIVE_PER_SIDE,
+    StateTerrain, StateTrickRoom, StateWeather, VolatileStatusBitset, VolatileStatusDurations,
+    ACTIVE_PER_SIDE,
 };
 use std::str::FromStr;
 use std::time::Duration;
@@ -70,7 +71,7 @@ fn move_category_from_string(s: &str) -> MoveCategory {
 }
 
 #[derive(Clone)]
-#[pyclass(name = "State", module = "poke_engine", get_all)]
+#[pyclass(name = "State", module = "poke_engine", get_all, from_py_object)]
 pub struct PyState {
     pub side_one: PySide,
     pub side_two: PySide,
@@ -192,7 +193,7 @@ impl PyState {
 }
 
 #[derive(Clone)]
-#[pyclass(name = "Side", module = "poke_engine", get_all)]
+#[pyclass(name = "Side", module = "poke_engine", get_all, from_py_object)]
 pub struct PySide {
     pokemon: [PyPokemon; 6],
     side_conditions: PySideConditions,
@@ -352,7 +353,12 @@ impl PySide {
 }
 
 #[derive(Clone)]
-#[pyclass(name = "VolatileStatusDurations", module = "poke_engine", get_all)]
+#[pyclass(
+    name = "VolatileStatusDurations",
+    module = "poke_engine",
+    get_all,
+    from_py_object
+)]
 pub struct PyVolatileStatusDurations {
     pub confusion: i8,
     pub encore: i8,
@@ -419,7 +425,12 @@ impl PyVolatileStatusDurations {
 }
 
 #[derive(Clone)]
-#[pyclass(name = "SideConditions", module = "poke_engine", get_all)]
+#[pyclass(
+    name = "SideConditions",
+    module = "poke_engine",
+    get_all,
+    from_py_object
+)]
 pub struct PySideConditions {
     pub aurora_veil: i8,
     pub crafty_shield: i8,
@@ -564,7 +575,7 @@ impl PySideConditions {
 }
 
 #[derive(Clone)]
-#[pyclass(name = "Pokemon", module = "poke_engine", get_all)]
+#[pyclass(name = "Pokemon", module = "poke_engine", get_all, from_py_object)]
 pub struct PyPokemon {
     pub id: String,
     pub level: i8,
@@ -646,11 +657,16 @@ impl From<Pokemon> for PyPokemon {
                 .into_iter()
                 .map(|m| PyMove::from(m.clone()))
                 .collect(),
-            volatile_statuses: other
-                .volatile_statuses
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            volatile_statuses: {
+                let mut set = HashSet::new();
+                let mut remaining = other.volatile_statuses.0;
+                while remaining != 0 {
+                    let bit_index = remaining.trailing_zeros() as u8;
+                    set.insert(PokemonVolatileStatus::from(bit_index).to_string());
+                    remaining &= remaining - 1;
+                }
+                set
+            },
             volatile_status_durations: PyVolatileStatusDurations::from(
                 other.volatile_status_durations.clone(),
             ),
@@ -711,12 +727,15 @@ impl Into<Pokemon> for PyPokemon {
                 m2: moves_vec[2].clone().into(),
                 m3: moves_vec[3].clone().into(),
             },
-            volatile_statuses: self
-                .volatile_statuses
-                .iter()
-                .map(|s| PokemonVolatileStatus::from_str(s))
-                .collect::<Result<HashSet<_>, _>>()
-                .unwrap(),
+            volatile_statuses: {
+                let mut set = VolatileStatusBitset::default();
+                for s in &self.volatile_statuses {
+                    if let Ok(vs) = PokemonVolatileStatus::from_str(s) {
+                        set.insert(vs);
+                    }
+                }
+                set
+            },
             volatile_status_durations: self.volatile_status_durations.into(),
             substitute_health: self.substitute_health,
             attack_boost: self.attack_boost,
@@ -905,7 +924,7 @@ impl PyDamageDealt {
 }
 
 #[derive(Clone)]
-#[pyclass(name = "Move", module = "poke_engine", get_all)]
+#[pyclass(name = "Move", module = "poke_engine", get_all, from_py_object)]
 pub struct PyMove {
     pub id: String,
     pub disabled: bool,
@@ -960,7 +979,7 @@ impl PyMove {
 }
 
 #[derive(Clone)]
-#[pyclass(get_all)]
+#[pyclass(get_all, from_py_object)]
 struct PyMctsSideResult {
     pub move_choice: String,
     pub total_score: f32,
@@ -978,7 +997,7 @@ impl PyMctsSideResult {
 }
 
 #[derive(Clone)]
-#[pyclass(get_all)]
+#[pyclass(get_all, from_py_object)]
 struct PyMctsResult {
     s1: Vec<PyMctsSideResult>,
     s2: Vec<PyMctsSideResult>,
@@ -1004,7 +1023,7 @@ impl PyMctsResult {
 }
 
 #[derive(Clone)]
-#[pyclass(get_all)]
+#[pyclass(get_all, from_py_object)]
 struct PyIterativeDeepeningResult {
     s1: Vec<String>,
     s2: Vec<String>,
@@ -1035,14 +1054,21 @@ impl PyIterativeDeepeningResult {
 }
 
 #[pyfunction]
-fn mcts(py_state: PyState, duration_ms: u64, threads: usize) -> PyResult<PyMctsResult> {
+fn mcts(
+    py_state: PyState,
+    duration_ms: u64,
+    iterations: u32,
+    threads: usize,
+) -> PyResult<PyMctsResult> {
     let mut state: State = py_state.into();
     let duration = Duration::from_millis(duration_ms);
     let (s1_options, s2_options) = decision::root_get_all_options(&state);
     let mcts_result = if threads > 1 {
-        perform_mcts_shared_tree(&mut state, s1_options, s2_options, duration, threads)
+        perform_mcts_shared_tree(
+            &mut state, s1_options, s2_options, duration, iterations, threads,
+        )
     } else {
-        perform_mcts(&mut state, s1_options, s2_options, duration)
+        perform_mcts(&mut state, s1_options, s2_options, duration, iterations)
     };
 
     let py_mcts_result = PyMctsResult::from_mcts_result(mcts_result, &state);
@@ -1062,7 +1088,12 @@ fn id(py_state: PyState, duration_ms: u64) -> PyResult<PyIterativeDeepeningResul
 }
 
 #[derive(Clone)]
-#[pyclass(name = "StateInstructions", module = "poke_engine", get_all)]
+#[pyclass(
+    name = "StateInstructions",
+    module = "poke_engine",
+    get_all,
+    from_py_object
+)]
 struct PyStateInstructions {
     pub percentage: f32,
     pub instruction_list: Vec<PyInstruction>,
@@ -1110,7 +1141,7 @@ impl PyStateInstructions {
 }
 
 #[derive(Clone)]
-#[pyclass(module = "poke_engine")]
+#[pyclass(module = "poke_engine", from_py_object)]
 struct PyInstruction {
     instruction: Instruction,
 }

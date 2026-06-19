@@ -76,6 +76,9 @@ struct MonteCarloTreeSearch {
     #[clap(short = 't', long, default_value_t = 5000)]
     time_to_search_ms: u64,
 
+    #[clap(short = 'i', long, default_value_t = 0)]
+    iterations: u32,
+
     #[clap(short = 'n', long, default_value_t = 1)]
     threads: usize,
 }
@@ -308,6 +311,7 @@ pub fn main() {
                         side_one_options.clone(),
                         side_two_options.clone(),
                         std::time::Duration::from_millis(mcts.time_to_search_ms),
+                        mcts.iterations,
                         mcts.threads,
                     )
                 } else {
@@ -316,6 +320,7 @@ pub fn main() {
                         side_one_options.clone(),
                         side_two_options.clone(),
                         std::time::Duration::from_millis(mcts.time_to_search_ms),
+                        mcts.iterations,
                     )
                 };
                 print_mcts_result(&state, result);
@@ -591,6 +596,7 @@ fn command_loop(mut io_data: IOData) {
                         side_one_options.clone(),
                         side_two_options.clone(),
                         std::time::Duration::from_millis(max_time_ms),
+                        0,
                     );
                     let elapsed = start_time.elapsed();
                     pprint_mcts_result(&io_data.state, result);
@@ -628,6 +634,7 @@ fn command_loop(mut io_data: IOData) {
                     side_one_options.clone(),
                     side_two_options.clone(),
                     std::time::Duration::from_millis(max_time_ms),
+                    0,
                     worker_count,
                 );
                 let elapsed = start_time.elapsed();

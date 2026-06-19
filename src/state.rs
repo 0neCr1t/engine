@@ -5,7 +5,6 @@ use crate::engine::items::Items;
 use crate::engine::state::{PokemonVolatileStatus, Terrain, Weather};
 use crate::instruction::{BoostInstruction, EnableMoveInstruction, Instruction};
 use crate::pokemon::PokemonName;
-use std::collections::HashSet;
 use std::ops::{Index, IndexMut};
 use std::str::FromStr;
 
@@ -219,6 +218,64 @@ define_enum_with_from_str! {
         JOLLY,
         NAIVE,
         SERIOUS
+    }
+}
+
+impl PokemonVolatileStatus {
+    #[inline(always)]
+    pub fn bit(self) -> u128 {
+        debug_assert!(
+            (self as u8) < 128,
+            "PokemonVolatileStatus variant index exceeds u128 bit width"
+        );
+        1u128 << (self as u8)
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub struct VolatileStatusBitset(pub u128);
+
+impl VolatileStatusBitset {
+    #[inline(always)]
+    pub fn contains(&self, vs: &PokemonVolatileStatus) -> bool {
+        self.0 & vs.bit() != 0
+    }
+
+    #[inline(always)]
+    pub fn insert(&mut self, vs: PokemonVolatileStatus) {
+        self.0 |= vs.bit();
+    }
+
+    #[inline(always)]
+    pub fn remove(&mut self, vs: &PokemonVolatileStatus) {
+        self.0 &= !vs.bit();
+    }
+
+    #[inline(always)]
+    pub fn remove_with_check(&mut self, vs: &PokemonVolatileStatus) -> bool {
+        if !self.contains(vs) {
+            return false;
+        }
+        self.0 &= !vs.bit();
+        true
+    }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn retain<F: FnMut(&PokemonVolatileStatus) -> bool>(&mut self, f: &mut F) {
+        // iterate over set bits and clear those where f returns false
+        let mut remaining = self.0;
+        while remaining != 0 {
+            let bit_index = remaining.trailing_zeros() as u8;
+            let vs = PokemonVolatileStatus::from(bit_index);
+            if !f(&vs) {
+                self.0 &= !(1u128 << bit_index);
+            }
+            remaining &= remaining - 1;
+        }
     }
 }
 
@@ -863,7 +920,7 @@ pub struct Pokemon {
     pub speed_boost: i8,
     pub accuracy_boost: i8,
     pub evasion_boost: i8,
-    pub volatile_statuses: HashSet<PokemonVolatileStatus>,
+    pub volatile_statuses: VolatileStatusBitset,
     pub volatile_status_durations: VolatileStatusDurations,
     pub substitute_health: i16,
     pub last_used_move: LastUsedMove,
@@ -908,7 +965,7 @@ impl Default for Pokemon {
             speed_boost: 0,
             accuracy_boost: 0,
             evasion_boost: 0,
-            volatile_statuses: HashSet::<PokemonVolatileStatus>::new(),
+            volatile_statuses: VolatileStatusBitset::default(),
             volatile_status_durations: VolatileStatusDurations::default(),
             substitute_health: 0,
             last_used_move: LastUsedMove::None,
@@ -1151,9 +1208,13 @@ impl Side {
         // format byte-identical, source these fields from the active slot-0 Pokemon.
         let active = self.get_active_immutable();
         let mut vs_string = String::new();
-        for vs in &active.volatile_statuses {
+        let mut remaining = active.volatile_statuses.0;
+        while remaining != 0 {
+            let bit_index = remaining.trailing_zeros() as u8;
+            let vs = PokemonVolatileStatus::from(bit_index);
             vs_string.push_str(&vs.to_string());
             vs_string.push_str(":");
+            remaining &= remaining - 1;
         }
         let base = format!(
             "{}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}={}",
@@ -1196,9 +1257,13 @@ impl Side {
         {
             let slot1 = self.get_active_slot_immutable(1);
             let mut vs1_string = String::new();
-            for vs in &slot1.volatile_statuses {
+            let mut remaining = slot1.volatile_statuses.0;
+            while remaining != 0 {
+                let bit_index = remaining.trailing_zeros() as u8;
+                let vs = PokemonVolatileStatus::from(bit_index);
                 vs1_string.push_str(&vs.to_string());
                 vs1_string.push_str(":");
+                remaining &= remaining - 1;
             }
             return format!(
                 "{}={}={}={}={}={}={}={}={}={}={}={}={}={}",
@@ -1228,10 +1293,10 @@ impl Side {
     pub fn deserialize(serialized: &str) -> Side {
         let split: Vec<&str> = serialized.split("=").collect();
 
-        let mut vs_hashset = HashSet::new();
+        let mut vs_bitset = VolatileStatusBitset::default();
         if split[8] != "" {
             for item in split[8].split(":") {
-                vs_hashset.insert(PokemonVolatileStatus::from_str(item).unwrap());
+                vs_bitset.insert(PokemonVolatileStatus::from_str(item).unwrap());
             }
         }
         let mut side = Side {
@@ -1268,7 +1333,7 @@ impl Side {
         // keep the singles serialized format byte-identical.
         {
             let active = side.get_active();
-            active.volatile_statuses = vs_hashset;
+            active.volatile_statuses = vs_bitset;
             active.volatile_status_durations = VolatileStatusDurations::deserialize(split[9]);
             active.substitute_health = split[10].parse::<i16>().unwrap();
             active.attack_boost = split[11].parse::<i8>().unwrap();
@@ -1288,7 +1353,7 @@ impl Side {
         {
             if split.len() > 29 {
                 side.active_indices[1] = PokemonIndex::deserialize(split[29]);
-                let mut vs1_hashset = HashSet::new();
+                let mut vs1_bitset = VolatileStatusBitset::default();
                 if split[30] != "" {
                     for item in split[30].split(":") {
                         // The serialized list is `:`-terminated, so the final split
@@ -1297,12 +1362,12 @@ impl Side {
                         if item.is_empty() {
                             continue;
                         }
-                        vs1_hashset.insert(PokemonVolatileStatus::from_str(item).unwrap());
+                        vs1_bitset.insert(PokemonVolatileStatus::from_str(item).unwrap());
                     }
                 }
                 {
                     let slot1 = side.get_active_slot(1);
-                    slot1.volatile_statuses = vs1_hashset;
+                    slot1.volatile_statuses = vs1_bitset;
                     slot1.volatile_status_durations =
                         VolatileStatusDurations::deserialize(split[31]);
                     slot1.substitute_health = split[32].parse::<i16>().unwrap();

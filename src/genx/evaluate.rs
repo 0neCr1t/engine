@@ -166,13 +166,14 @@ pub fn evaluate(state: &State) -> f32 {
             score += evaluate_pokemon(pkmn);
             score += evaluate_hazards(pkmn, &state.side_one);
             if (0..ACTIVE_PER_SIDE).any(|slot| iter.pokemon_index == state.side_one.active_indices[slot]) {
-                for vs in pkmn.volatile_statuses.iter() {
-                    match vs {
-                        PokemonVolatileStatus::LEECHSEED => score += LEECH_SEED,
-                        PokemonVolatileStatus::SUBSTITUTE => score += SUBSTITUTE,
-                        PokemonVolatileStatus::CONFUSION => score += CONFUSION,
-                        _ => {}
-                    }
+                if pkmn.volatile_statuses.contains(&PokemonVolatileStatus::LEECHSEED) {
+                    score += LEECH_SEED;
+                }
+                if pkmn.volatile_statuses.contains(&PokemonVolatileStatus::SUBSTITUTE) {
+                    score += SUBSTITUTE;
+                }
+                if pkmn.volatile_statuses.contains(&PokemonVolatileStatus::CONFUSION) {
+                    score += CONFUSION;
                 }
 
                 score += get_boost_multiplier(pkmn.attack_boost) * POKEMON_ATTACK_BOOST;
@@ -199,13 +200,14 @@ pub fn evaluate(state: &State) -> f32 {
             score -= evaluate_hazards(pkmn, &state.side_two);
 
             if (0..ACTIVE_PER_SIDE).any(|slot| iter.pokemon_index == state.side_two.active_indices[slot]) {
-                for vs in pkmn.volatile_statuses.iter() {
-                    match vs {
-                        PokemonVolatileStatus::LEECHSEED => score -= LEECH_SEED,
-                        PokemonVolatileStatus::SUBSTITUTE => score -= SUBSTITUTE,
-                        PokemonVolatileStatus::CONFUSION => score -= CONFUSION,
-                        _ => {}
-                    }
+                if pkmn.volatile_statuses.contains(&PokemonVolatileStatus::LEECHSEED) {
+                    score -= LEECH_SEED;
+                }
+                if pkmn.volatile_statuses.contains(&PokemonVolatileStatus::SUBSTITUTE) {
+                    score -= SUBSTITUTE;
+                }
+                if pkmn.volatile_statuses.contains(&PokemonVolatileStatus::CONFUSION) {
+                    score -= CONFUSION;
                 }
 
                 score -= get_boost_multiplier(pkmn.attack_boost) * POKEMON_ATTACK_BOOST;

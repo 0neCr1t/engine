@@ -1184,6 +1184,7 @@ fn test_doubles_mcts_returns_valid_combined_actions() {
         s1_options.clone(),
         s2_options.clone(),
         std::time::Duration::from_millis(100),
+        0,
     );
 
     // One result row per enumerated option, in the same order.

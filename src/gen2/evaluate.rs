@@ -118,13 +118,15 @@ pub fn evaluate(state: &State) -> f32 {
             side_one_alive_count += 1.0;
             score += evaluate_pokemon(pkmn);
             if iter.pokemon_index == state.side_one.active_indices[0] {
-                for vs in state.side_one.get_active_immutable().volatile_statuses.iter() {
-                    match vs {
-                        PokemonVolatileStatus::LEECHSEED => score += LEECH_SEED,
-                        PokemonVolatileStatus::SUBSTITUTE => score += SUBSTITUTE,
-                        PokemonVolatileStatus::CONFUSION => score += CONFUSION,
-                        _ => {}
-                    }
+                let vs = &state.side_one.get_active_immutable().volatile_statuses;
+                if vs.contains(&PokemonVolatileStatus::LEECHSEED) {
+                    score += LEECH_SEED;
+                }
+                if vs.contains(&PokemonVolatileStatus::SUBSTITUTE) {
+                    score += SUBSTITUTE;
+                }
+                if vs.contains(&PokemonVolatileStatus::CONFUSION) {
+                    score += CONFUSION;
                 }
                 score += get_boost_multiplier(state.side_one.get_active_immutable().attack_boost) * POKEMON_ATTACK_BOOST;
                 score += get_boost_multiplier(state.side_one.get_active_immutable().defense_boost) * POKEMON_DEFENSE_BOOST;
@@ -143,13 +145,15 @@ pub fn evaluate(state: &State) -> f32 {
             score -= evaluate_pokemon(pkmn);
 
             if iter.pokemon_index == state.side_two.active_indices[0] {
-                for vs in state.side_two.get_active_immutable().volatile_statuses.iter() {
-                    match vs {
-                        PokemonVolatileStatus::LEECHSEED => score -= LEECH_SEED,
-                        PokemonVolatileStatus::SUBSTITUTE => score -= SUBSTITUTE,
-                        PokemonVolatileStatus::CONFUSION => score -= CONFUSION,
-                        _ => {}
-                    }
+                let vs = &state.side_two.get_active_immutable().volatile_statuses;
+                if vs.contains(&PokemonVolatileStatus::LEECHSEED) {
+                    score -= LEECH_SEED;
+                }
+                if vs.contains(&PokemonVolatileStatus::SUBSTITUTE) {
+                    score -= SUBSTITUTE;
+                }
+                if vs.contains(&PokemonVolatileStatus::CONFUSION) {
+                    score -= CONFUSION;
                 }
                 score -= get_boost_multiplier(state.side_two.get_active_immutable().attack_boost) * POKEMON_ATTACK_BOOST;
                 score -= get_boost_multiplier(state.side_two.get_active_immutable().defense_boost) * POKEMON_DEFENSE_BOOST;

@@ -1,6 +1,6 @@
 [package]
 name = "poke-engine"
-version = "0.0.46"
+version = "0.0.47"
 authors = ["pmariglia <pmariglia@github.com>"]
 edition = "2018"
 license-file = "LICENSE"
@@ -15,13 +15,17 @@ crate-type = ["lib"]
 name = "poke-engine"
 path = "src/main.rs"
 
+[[bin]]
+name = "benchmark"
+path = "data/benchmark.rs"
+
 [profile.release]
 debug = 1
 
 [dependencies]
 dashmap = "6.1.0"
 clap = { version = "4.5.4", features = ["derive"] }
-rand = "0.9.1"
+rand = "0.9.3"
 
 [features]
 remove_low_chance_instructions = []

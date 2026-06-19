@@ -3139,7 +3139,7 @@ fn add_end_of_turn_instructions(
                     .get_side(side_ref)
                     .get_active_slot(slot)
                     .volatile_statuses
-                    .remove(&vs)
+                    .remove_with_check(&vs)
                 {
                     incoming_instructions.instruction_list.push(
                         Instruction::RemoveVolatileStatus(RemoveVolatileStatusInstruction::new(
@@ -3731,8 +3731,9 @@ fn add_end_of_turn_instructions(
         }
 
         if side
-            .get_active().volatile_statuses
-            .remove(&PokemonVolatileStatus::PERISH2)
+            .get_active()
+            .volatile_statuses
+            .remove_with_check(&PokemonVolatileStatus::PERISH2)
         {
             side.get_active().volatile_statuses
                 .insert(PokemonVolatileStatus::PERISH1);
@@ -3756,8 +3757,9 @@ fn add_end_of_turn_instructions(
                 ));
         }
         if side
-            .get_active().volatile_statuses
-            .remove(&PokemonVolatileStatus::PERISH3)
+            .get_active()
+            .volatile_statuses
+            .remove_with_check(&PokemonVolatileStatus::PERISH3)
         {
             side.get_active().volatile_statuses
                 .insert(PokemonVolatileStatus::PERISH2);
@@ -3781,8 +3783,9 @@ fn add_end_of_turn_instructions(
                 ));
         }
         if side
-            .get_active().volatile_statuses
-            .remove(&PokemonVolatileStatus::PERISH4)
+            .get_active()
+            .volatile_statuses
+            .remove_with_check(&PokemonVolatileStatus::PERISH4)
         {
             side.get_active().volatile_statuses
                 .insert(PokemonVolatileStatus::PERISH3);
@@ -3807,8 +3810,9 @@ fn add_end_of_turn_instructions(
         }
 
         if side
-            .get_active().volatile_statuses
-            .remove(&PokemonVolatileStatus::FLINCH)
+            .get_active()
+            .volatile_statuses
+            .remove_with_check(&PokemonVolatileStatus::FLINCH)
         {
             incoming_instructions
                 .instruction_list
@@ -3820,7 +3824,11 @@ fn add_end_of_turn_instructions(
                     ),
                 ));
         }
-        if side.get_active().volatile_statuses.remove(&PokemonVolatileStatus::ROOST) {
+        if side
+            .get_active()
+            .volatile_statuses
+            .remove_with_check(&PokemonVolatileStatus::ROOST)
+        {
             incoming_instructions
                 .instruction_list
                 .push(Instruction::RemoveVolatileStatus(
